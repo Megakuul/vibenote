@@ -1,0 +1,115 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.04,
+      "mean": 0.03,
+      "min": 0.02,
+      "n": 402,
+      "p50": 0.03,
+      "p90": 0.04,
+      "p95": 0.04,
+      "p99": 0.04
+    },
+    "pressure_abs_err": {
+      "max": 0.5,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 402,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 14.83,
+      "mean": 14.83,
+      "min": 14.83,
+      "n": 402,
+      "p50": 14.83,
+      "p90": 14.83,
+      "p95": 14.83,
+      "p99": 14.83
+    }
+  },
+  "contact_events": {
+    "app_events": 402,
+    "app_from_history": 40,
+    "matched": 402,
+    "matched_by_index": 0,
+    "sim_frames": 400
+  },
+  "frames": {
+    "discarded": 0,
+    "drawn": 365,
+    "present_interval_ms": {
+      "max": 2659.1,
+      "mean": 13.94,
+      "min": 4.2,
+      "n": 364,
+      "p50": 5.56,
+      "p90": 6.56,
+      "p95": 6.6,
+      "p99": 6.77
+    },
+    "presented": 365,
+    "refresh_ms": 16.667
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 4.13,
+      "mean": 0.11,
+      "min": 0.02,
+      "n": 402,
+      "p50": 0.08,
+      "p90": 0.13,
+      "p95": 0.15,
+      "p99": 0.5
+    },
+    "e2e_sim_to_present": {
+      "max": 20.8,
+      "mean": 13.97,
+      "min": 10.21,
+      "n": 402,
+      "p50": 14.09,
+      "p90": 15.9,
+      "p95": 16.84,
+      "p99": 17.0
+    },
+    "input_sim_to_app": {
+      "max": 5.97,
+      "mean": 3.19,
+      "min": 0.09,
+      "n": 402,
+      "p50": 3.08,
+      "p90": 5.3,
+      "p95": 5.78,
+      "p99": 5.9
+    },
+    "submit_to_present": {
+      "max": 11.22,
+      "mean": 10.67,
+      "min": 9.35,
+      "n": 402,
+      "p50": 10.92,
+      "p90": 11.07,
+      "p95": 11.13,
+      "p99": 11.2
+    }
+  },
+  "meta": {
+    "gtk": "4.22.4",
+    "k": "meta",
+    "predict_us": 0,
+    "renderer": "GskVulkanRenderer",
+    "variant": "gtk"
+  },
+  "name": "results/m-gtk-s1",
+  "strokes": {
+    "app": 2,
+    "sim": 2
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

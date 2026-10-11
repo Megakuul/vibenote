@@ -1,0 +1,118 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.06,
+      "mean": 0.04,
+      "min": 0.02,
+      "n": 1505,
+      "p50": 0.04,
+      "p90": 0.05,
+      "p95": 0.05,
+      "p99": 0.06
+    },
+    "pressure_abs_err": {
+      "max": 0.5,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1505,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1505,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    }
+  },
+  "contact_events": {
+    "app_events": 1505,
+    "app_from_history": 0,
+    "matched": 1505,
+    "matched_by_index": 0,
+    "sim_frames": 1500
+  },
+  "frames": {
+    "discarded": 1,
+    "drawn": 1354,
+    "present_interval_ms": {
+      "max": 2273.16,
+      "mean": 8.2,
+      "min": 5.56,
+      "n": 1352,
+      "p50": 5.57,
+      "p90": 5.57,
+      "p95": 5.57,
+      "p99": 5.57
+    },
+    "presented": 1353,
+    "refresh_ms": 5.555493
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 8.36,
+      "mean": 3.28,
+      "min": 0.07,
+      "n": 1505,
+      "p50": 3.37,
+      "p90": 5.4,
+      "p95": 5.55,
+      "p99": 5.69
+    },
+    "e2e_sim_to_present": {
+      "max": 21.86,
+      "mean": 14.34,
+      "min": 11.13,
+      "n": 1505,
+      "p50": 14.32,
+      "p90": 16.55,
+      "p95": 16.83,
+      "p99": 17.07
+    },
+    "input_sim_to_app": {
+      "max": 5.34,
+      "mean": 0.1,
+      "min": 0.02,
+      "n": 1505,
+      "p50": 0.04,
+      "p90": 0.13,
+      "p95": 0.41,
+      "p99": 0.69
+    },
+    "submit_to_present": {
+      "max": 16.35,
+      "mean": 10.96,
+      "min": 8.09,
+      "n": 1505,
+      "p50": 10.96,
+      "p90": 11.14,
+      "p95": 11.14,
+      "p99": 11.16
+    }
+  },
+  "meta": {
+    "frame_latency": 1,
+    "k": "meta",
+    "predict_us": 0,
+    "present": "Fifo",
+    "scale": 1.0,
+    "sched": "redraw",
+    "variant": "winit",
+    "winit": "0.31.0-beta.3"
+  },
+  "name": "results/b1-winit-redraw",
+  "strokes": {
+    "app": 5,
+    "sim": 5
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

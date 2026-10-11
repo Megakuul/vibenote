@@ -1,0 +1,6 @@
+[workspace]
+resolver = "3"
+members = ["bench", "vbench"]
+
+[profile.release]
+debug = 1

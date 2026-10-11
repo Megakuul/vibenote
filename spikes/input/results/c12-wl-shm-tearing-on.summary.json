@@ -1,0 +1,112 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.06,
+      "mean": 0.04,
+      "min": 0.02,
+      "n": 1500,
+      "p50": 0.04,
+      "p90": 0.05,
+      "p95": 0.05,
+      "p99": 0.06
+    },
+    "pressure_abs_err": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1500,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1500,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    }
+  },
+  "contact_events": {
+    "app_events": 1500,
+    "app_from_history": 0,
+    "matched": 1500,
+    "matched_by_index": 1500,
+    "sim_frames": 1500
+  },
+  "frames": {
+    "discarded": 154,
+    "drawn": 1502,
+    "present_interval_ms": {
+      "max": 2282.2,
+      "mean": 8.23,
+      "min": 5.55,
+      "n": 1347,
+      "p50": 5.56,
+      "p90": 5.56,
+      "p95": 5.56,
+      "p99": 5.56
+    },
+    "presented": 1348,
+    "refresh_ms": 5.555493
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 9.47,
+      "mean": 0.52,
+      "min": 0.0,
+      "n": 1500,
+      "p50": 0.02,
+      "p90": 4.58,
+      "p95": 4.96,
+      "p99": 5.03
+    },
+    "e2e_sim_to_present": {
+      "max": 16.47,
+      "mean": 8.84,
+      "min": 6.03,
+      "n": 1500,
+      "p50": 8.82,
+      "p90": 11.11,
+      "p95": 11.36,
+      "p99": 11.59
+    },
+    "input_sim_to_app": {
+      "max": 0.96,
+      "mean": 0.09,
+      "min": 0.02,
+      "n": 1500,
+      "p50": 0.08,
+      "p90": 0.11,
+      "p95": 0.17,
+      "p99": 0.41
+    },
+    "submit_to_present": {
+      "max": 11.01,
+      "mean": 8.23,
+      "min": 5.96,
+      "n": 1500,
+      "p50": 8.17,
+      "p90": 10.38,
+      "p95": 10.72,
+      "p99": 10.9
+    }
+  },
+  "meta": {
+    "k": "meta",
+    "scale120": 120
+  },
+  "name": "results/c12-wl-shm-tearing-on",
+  "strokes": {
+    "app": 5,
+    "sim": 5
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

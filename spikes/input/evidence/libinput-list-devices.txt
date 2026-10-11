@@ -1,0 +1,25 @@
+Area rectangle:          n/a
+
+Device:                  simtab virtual pen
+Kernel:                  /dev/input/event12
+Id:                      virtual:1d50:5154
+Group:                   7
+Seat:                    seat0, default
+Size:                    330x210mm
+Capabilities:            tablet 
+Tap-to-click:            n/a
+Tap-and-drag:            n/a
+Tap button map:          n/a
+Tap drag lock:           n/a
+Left-handed:             disabled
+Nat.scrolling:           n/a
+Middle emulation:        n/a
+Calibration:             identity matrix
+Scroll methods:          none
+Scroll button:           n/a
+Scroll button lock:      n/a
+Click methods:           none
+Clickfinger button map:  n/a
+Disable-w-typing:        n/a
+Disable-w-trackpointing: n/a
+Accel profiles:          none

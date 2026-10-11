@@ -1,0 +1,10 @@
+arxiv-1512.03385.pdf pdfium pages 12 open 0.1 render1240 p50/p95/max 6.0/6.3/7.5 2480 p50/max 21.6/25.0
+arxiv-1512.03385.pdf hayro  pages 12 open 0.5 render1240 p50/p95/max 9.0/9.5/18.1 2480 p50/max 15.1/19.5
+arxiv-1706.03762.pdf pdfium pages 15 open 0.9 render1240 p50/p95/max 5.8/22.6/33.5 2480 p50/max 19.2/77.5
+arxiv-1706.03762.pdf hayro  pages 15 open 0.8 render1240 p50/p95/max 6.1/47.5/56.2 2480 p50/max 10.5/190.4
+arxiv-1810.04805.pdf pdfium pages 16 open 0.1 render1240 p50/p95/max 6.8/10.8/13.4 2480 p50/max 23.9/31.5
+arxiv-1810.04805.pdf hayro  pages 16 open 0.9 render1240 p50/p95/max 8.6/73.3/117.1 2480 p50/max 19.8/454.7
+arxiv-2010.11929.pdf pdfium pages 22 open 0.3 render1240 p50/p95/max 5.3/16.9/41.8 2480 p50/max 20.0/55.4
+arxiv-2010.11929.pdf hayro  pages 22 open 1.7 render1240 p50/p95/max 7.7/17.6/28.9 2480 p50/max 12.6/41.0
+arxiv-2303.08774.pdf pdfium pages 100 open 0.2 render1240 p50/p95/max 5.4/8.5/27.2 2480 p50/max 20.9/40.9
+arxiv-2303.08774.pdf hayro  pages 100 open 1.6 render1240 p50/p95/max 6.1/8.0/25.3 2480 p50/max 10.9/33.6

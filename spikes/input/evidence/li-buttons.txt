@@ -1,0 +1,170 @@
+libinput version: 1.31.3
+event12 - simtab virtual pen: is tagged by udev as: Tablet
+event12 - simtab virtual pen: device "simtab virtual pen" (1d50:5154) is not known to libwacom
+event12 - simtab virtual pen: device is a tablet
+-event12  DEVICE_ADDED                 simtab virtual pen                seat0 default group1  cap:T  size 330x210mm left calib
+ event12  TABLET_TOOL_PROXIMITY        +0.000s		33.00*/52.50*	tilt: 15.00*/-10.00*	distance: 1.00*	pen      ('<unnamed>', 0, id 0) proximity-in	axes:dpt	btn:SS2
+ event12  TABLET_TOOL_AXIS             +0.005s		33.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.87*
+ event12  TABLET_TOOL_AXIS          2  +0.010s		33.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.75*
+ event12  TABLET_TOOL_AXIS          3  +0.015s		33.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.62*
+ event12  TABLET_TOOL_AXIS          4  +0.020s		33.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.51*
+ event12  TABLET_TOOL_AXIS          5  +0.025s		33.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.38*
+ event12  TABLET_TOOL_AXIS          6  +0.030s		33.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.25*
+ event12  TABLET_TOOL_AXIS          7  +0.035s		33.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.13*
+ event12  TABLET_TOOL_TIP              +0.040s		33.00 /52.50 	tilt: 15.00 /-10.00 	pressure: 0.50* down
+ event12  TABLET_TOOL_AXIS             +0.045s		37.47*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          2  +0.050s		41.95*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          3  +0.055s		46.42*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          4  +0.060s		50.90*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          5  +0.065s		55.37*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          6  +0.070s		59.85*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          7  +0.075s		64.32*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          8  +0.080s		68.80*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          9  +0.085s		73.27*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         10  +0.090s		77.75*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         11  +0.095s		82.22*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         12  +0.100s		86.69*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         13  +0.105s		91.17*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         14  +0.110s		95.64*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         15  +0.115s		100.12*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         16  +0.120s		104.59*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         17  +0.125s		109.07*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         18  +0.130s		113.54*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         19  +0.135s		118.02*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         20  +0.140s		122.49*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_BUTTON           +0.140s	s331 (BTN_STYLUS) pressed, seat count: 1
+ event12  TABLET_TOOL_AXIS             +0.145s		126.97*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          2  +0.150s		131.44*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          3  +0.155s		135.92*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          4  +0.160s		140.39*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          5  +0.165s		144.86*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          6  +0.170s		149.34*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          7  +0.175s		153.81*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          8  +0.180s		158.29*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          9  +0.185s		162.76*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         10  +0.190s		167.24*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         11  +0.195s		171.71*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_BUTTON           +0.195s	s332 (BTN_STYLUS2) pressed, seat count: 1
+ event12  TABLET_TOOL_AXIS             +0.200s		176.19*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          2  +0.205s		180.66*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          3  +0.210s		185.14*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          4  +0.215s		189.61*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          5  +0.220s		194.08*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          6  +0.225s		198.56*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          7  +0.230s		203.03*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          8  +0.235s		207.51*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          9  +0.240s		211.98*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_BUTTON           +0.240s	s331 (BTN_STYLUS) released, seat count: 0
+ event12  TABLET_TOOL_AXIS             +0.245s		216.46*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          2  +0.250s		220.93*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          3  +0.255s		225.41*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          4  +0.260s		229.88*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          5  +0.265s		234.36*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          6  +0.270s		238.83*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          7  +0.275s		243.31*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          8  +0.280s		247.78*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          9  +0.285s		252.25*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         10  +0.290s		256.73*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         11  +0.295s		261.20*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         12  +0.300s		265.68*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         13  +0.305s		270.15*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         14  +0.310s		274.63*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         15  +0.315s		279.10*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         16  +0.320s		283.58*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         17  +0.325s		288.05*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         18  +0.330s		292.53*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         19  +0.335s		297.00*/52.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_TIP              +0.340s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.13* up
+ event12  TABLET_TOOL_BUTTON           +0.340s	s332 (BTN_STYLUS2) released, seat count: 0
+ event12  TABLET_TOOL_AXIS             +0.345s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.25*
+ event12  TABLET_TOOL_AXIS          2  +0.350s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.38*
+ event12  TABLET_TOOL_AXIS          3  +0.355s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.51*
+ event12  TABLET_TOOL_AXIS          4  +0.360s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.62*
+ event12  TABLET_TOOL_AXIS          5  +0.365s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.75*
+ event12  TABLET_TOOL_AXIS          6  +0.370s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 0.87*
+ event12  TABLET_TOOL_AXIS          7  +0.375s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 1.00*
+  78: Plugin:tablet-proximity-timer - simtab virtual pen: proximity out timer unloaded
+ event12  TABLET_TOOL_PROXIMITY        +0.380s		297.00 /52.50 	tilt: 15.00 /-10.00 	distance: 1.00 	pen      ('<unnamed>', 0, id 0) proximity-out
+ event12  TABLET_TOOL_PROXIMITY        +0.630s		33.00*/157.50*	tilt: 15.00*/-10.00*	distance: 1.00*	pen      ('<unnamed>', 0, id 0) proximity-in	axes:dpt	btn:SS2
+ event12  TABLET_TOOL_AXIS             +0.635s		33.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.87*
+ event12  TABLET_TOOL_AXIS          2  +0.640s		33.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.75*
+ event12  TABLET_TOOL_AXIS          3  +0.645s		33.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.62*
+ event12  TABLET_TOOL_AXIS          4  +0.650s		33.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.51*
+ event12  TABLET_TOOL_AXIS          5  +0.655s		33.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.38*
+ event12  TABLET_TOOL_AXIS          6  +0.660s		33.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.25*
+ event12  TABLET_TOOL_AXIS          7  +0.665s		33.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.13*
+ event12  TABLET_TOOL_TIP              +0.670s		33.00 /157.50 	tilt: 15.00 /-10.00 	pressure: 0.50* down
+ event12  TABLET_TOOL_AXIS             +0.675s		37.47*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          2  +0.680s		41.95*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          3  +0.685s		46.42*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          4  +0.690s		50.90*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          5  +0.695s		55.37*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          6  +0.700s		59.85*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          7  +0.705s		64.32*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          8  +0.710s		68.80*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          9  +0.715s		73.27*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         10  +0.720s		77.75*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         11  +0.725s		82.22*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         12  +0.730s		86.69*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         13  +0.735s		91.17*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         14  +0.740s		95.64*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         15  +0.745s		100.12*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         16  +0.750s		104.59*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         17  +0.755s		109.07*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         18  +0.760s		113.54*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         19  +0.765s		118.02*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         20  +0.770s		122.49*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_BUTTON           +0.770s	s331 (BTN_STYLUS) pressed, seat count: 1
+ event12  TABLET_TOOL_AXIS             +0.775s		126.97*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          2  +0.780s		131.44*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          3  +0.785s		135.92*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          4  +0.790s		140.39*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          5  +0.795s		144.86*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          6  +0.800s		149.34*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          7  +0.805s		153.81*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          8  +0.810s		158.29*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          9  +0.815s		162.76*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         10  +0.820s		167.24*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         11  +0.825s		171.71*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_BUTTON           +0.825s	s332 (BTN_STYLUS2) pressed, seat count: 1
+ event12  TABLET_TOOL_AXIS             +0.830s		176.19*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          2  +0.835s		180.66*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          3  +0.840s		185.14*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          4  +0.845s		189.61*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          5  +0.850s		194.08*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          6  +0.855s		198.56*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          7  +0.860s		203.03*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          8  +0.865s		207.51*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          9  +0.870s		211.98*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_BUTTON           +0.870s	s331 (BTN_STYLUS) released, seat count: 0
+ event12  TABLET_TOOL_AXIS             +0.875s		216.46*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          2  +0.880s		220.93*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          3  +0.885s		225.41*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          4  +0.890s		229.88*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          5  +0.895s		234.36*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          6  +0.900s		238.83*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          7  +0.905s		243.31*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          8  +0.910s		247.78*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS          9  +0.915s		252.25*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         10  +0.920s		256.73*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         11  +0.925s		261.20*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         12  +0.930s		265.68*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         13  +0.935s		270.15*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         14  +0.940s		274.63*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         15  +0.945s		279.10*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         16  +0.950s		283.58*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         17  +0.955s		288.05*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         18  +0.960s		292.53*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_AXIS         19  +0.965s		297.00*/157.50 	tilt: 15.00 /-10.00 	pressure: 0.50 
+ event12  TABLET_TOOL_TIP              +0.970s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.13* up
+ event12  TABLET_TOOL_BUTTON           +0.970s	s332 (BTN_STYLUS2) released, seat count: 0
+ event12  TABLET_TOOL_AXIS             +0.975s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.25*
+ event12  TABLET_TOOL_AXIS          2  +0.980s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.38*
+ event12  TABLET_TOOL_AXIS          3  +0.985s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.51*
+ event12  TABLET_TOOL_AXIS          4  +0.990s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.62*
+ event12  TABLET_TOOL_AXIS          5  +0.995s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.75*
+ event12  TABLET_TOOL_AXIS          6  +1.000s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 0.87*
+ event12  TABLET_TOOL_AXIS          7  +1.005s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 1.00*
+ event12  TABLET_TOOL_PROXIMITY        +1.010s		297.00 /157.50 	tilt: 15.00 /-10.00 	distance: 1.00 	pen      ('<unnamed>', 0, id 0) proximity-out
+event12 - simtab virtual pen: device removed
+ event12  DEVICE_REMOVED               simtab virtual pen                seat0 default group1  cap:T  size 330x210mm

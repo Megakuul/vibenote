@@ -1,0 +1,112 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.06,
+      "mean": 0.04,
+      "min": 0.02,
+      "n": 1500,
+      "p50": 0.04,
+      "p90": 0.05,
+      "p95": 0.05,
+      "p99": 0.06
+    },
+    "pressure_abs_err": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1500,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1500,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    }
+  },
+  "contact_events": {
+    "app_events": 1500,
+    "app_from_history": 0,
+    "matched": 1500,
+    "matched_by_index": 1500,
+    "sim_frames": 1500
+  },
+  "frames": {
+    "discarded": 7,
+    "drawn": 1098,
+    "present_interval_ms": {
+      "max": 2289.81,
+      "mean": 10.2,
+      "min": 5.56,
+      "n": 1090,
+      "p50": 5.57,
+      "p90": 11.13,
+      "p95": 11.13,
+      "p99": 11.13
+    },
+    "presented": 1091,
+    "refresh_ms": 5.555493
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 11.41,
+      "mean": 6.48,
+      "min": 0.07,
+      "n": 1500,
+      "p50": 5.55,
+      "p90": 11.14,
+      "p95": 11.18,
+      "p99": 11.23
+    },
+    "e2e_sim_to_present": {
+      "max": 33.86,
+      "mean": 29.39,
+      "min": 6.69,
+      "n": 1500,
+      "p50": 30.18,
+      "p90": 33.1,
+      "p95": 33.47,
+      "p99": 33.76
+    },
+    "input_sim_to_app": {
+      "max": 11.24,
+      "mean": 3.76,
+      "min": 0.02,
+      "n": 1500,
+      "p50": 3.35,
+      "p90": 8.23,
+      "p95": 9.76,
+      "p99": 10.9
+    },
+    "submit_to_present": {
+      "max": 22.73,
+      "mean": 19.15,
+      "min": 6.44,
+      "n": 1500,
+      "p50": 17.15,
+      "p90": 22.71,
+      "p95": 22.72,
+      "p99": 22.73
+    }
+  },
+  "meta": {
+    "k": "meta",
+    "scale120": 120
+  },
+  "name": "results/c6-wl-fifo-lat2",
+  "strokes": {
+    "app": 5,
+    "sim": 5
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.04,
+      "mean": 0.03,
+      "min": 0.02,
+      "n": 402,
+      "p50": 0.03,
+      "p90": 0.04,
+      "p95": 0.04,
+      "p99": 0.04
+    },
+    "pressure_abs_err": {
+      "max": 0.5,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 402,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 14.83,
+      "mean": 14.83,
+      "min": 14.83,
+      "n": 402,
+      "p50": 14.83,
+      "p90": 14.83,
+      "p95": 14.83,
+      "p99": 14.83
+    }
+  },
+  "contact_events": {
+    "app_events": 402,
+    "app_from_history": 43,
+    "matched": 402,
+    "matched_by_index": 0,
+    "sim_frames": 400
+  },
+  "frames": {
+    "discarded": 0,
+    "drawn": 361,
+    "present_interval_ms": {
+      "max": 2659.58,
+      "mean": 14.12,
+      "min": 4.37,
+      "n": 360,
+      "p50": 5.58,
+      "p90": 6.57,
+      "p95": 6.63,
+      "p99": 7.88
+    },
+    "presented": 361,
+    "refresh_ms": 16.667
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 15.08,
+      "mean": 0.15,
+      "min": 0.02,
+      "n": 402,
+      "p50": 0.07,
+      "p90": 0.11,
+      "p95": 0.14,
+      "p99": 0.79
+    },
+    "e2e_sim_to_present": {
+      "max": 26.22,
+      "mean": 13.92,
+      "min": 10.66,
+      "n": 402,
+      "p50": 13.87,
+      "p90": 16.14,
+      "p95": 16.43,
+      "p99": 19.49
+    },
+    "input_sim_to_app": {
+      "max": 10.56,
+      "mean": 3.15,
+      "min": 0.05,
+      "n": 402,
+      "p50": 3.17,
+      "p90": 5.39,
+      "p95": 5.68,
+      "p99": 5.97
+    },
+    "submit_to_present": {
+      "max": 16.69,
+      "mean": 10.62,
+      "min": 9.71,
+      "n": 402,
+      "p50": 10.88,
+      "p90": 11.1,
+      "p95": 11.15,
+      "p99": 11.24
+    }
+  },
+  "meta": {
+    "gtk": "4.22.4",
+    "k": "meta",
+    "predict_us": 0,
+    "renderer": "GskVulkanRenderer",
+    "variant": "gtk"
+  },
+  "name": "results/m-gtk-s1.25",
+  "strokes": {
+    "app": 2,
+    "sim": 2
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

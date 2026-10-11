@@ -1,0 +1,112 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.04,
+      "mean": 0.03,
+      "min": 0.02,
+      "n": 400,
+      "p50": 0.03,
+      "p90": 0.04,
+      "p95": 0.04,
+      "p99": 0.04
+    },
+    "pressure_abs_err": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 400,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 400,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    }
+  },
+  "contact_events": {
+    "app_events": 400,
+    "app_from_history": 0,
+    "matched": 400,
+    "matched_by_index": 400,
+    "sim_frames": 400
+  },
+  "frames": {
+    "discarded": 43,
+    "drawn": 404,
+    "present_interval_ms": {
+      "max": 2670.55,
+      "mean": 14.35,
+      "min": 5.55,
+      "n": 360,
+      "p50": 5.56,
+      "p90": 5.56,
+      "p95": 5.56,
+      "p99": 5.56
+    },
+    "presented": 361,
+    "refresh_ms": 5.555493
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 9.57,
+      "mean": 0.57,
+      "min": 0.01,
+      "n": 400,
+      "p50": 0.02,
+      "p90": 4.73,
+      "p95": 4.99,
+      "p99": 5.03
+    },
+    "e2e_sim_to_present": {
+      "max": 19.03,
+      "mean": 8.76,
+      "min": 6.04,
+      "n": 400,
+      "p50": 8.82,
+      "p90": 11.05,
+      "p95": 11.29,
+      "p99": 11.61
+    },
+    "input_sim_to_app": {
+      "max": 0.83,
+      "mean": 0.09,
+      "min": 0.04,
+      "n": 400,
+      "p50": 0.08,
+      "p90": 0.1,
+      "p95": 0.19,
+      "p99": 0.42
+    },
+    "submit_to_present": {
+      "max": 10.92,
+      "mean": 8.1,
+      "min": 5.95,
+      "n": 400,
+      "p50": 8.15,
+      "p90": 10.35,
+      "p95": 10.61,
+      "p99": 10.63
+    }
+  },
+  "meta": {
+    "k": "meta",
+    "scale120": 150
+  },
+  "name": "results/m-wlshm-s1.25",
+  "strokes": {
+    "app": 2,
+    "sim": 2
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

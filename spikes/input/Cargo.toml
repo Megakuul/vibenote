@@ -1,0 +1,6 @@
+[workspace]
+resolver = "3"
+members = ["analyze","common","simtab", "var-gtk", "var-winit", "var-wl"]
+
+[profile.release]
+debug = 1

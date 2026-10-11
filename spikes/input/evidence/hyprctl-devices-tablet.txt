@@ -1,0 +1,7 @@
+Tablets:
+	Tablet at 5b5315c5ccb0:
+		simtab-virtual-pen
+			size: 330x210mm
+
+
+Touch:

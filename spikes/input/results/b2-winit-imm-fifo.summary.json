@@ -1,0 +1,118 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.06,
+      "mean": 0.04,
+      "min": 0.02,
+      "n": 1505,
+      "p50": 0.04,
+      "p90": 0.05,
+      "p95": 0.05,
+      "p99": 0.06
+    },
+    "pressure_abs_err": {
+      "max": 0.5,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1505,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1505,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    }
+  },
+  "contact_events": {
+    "app_events": 1505,
+    "app_from_history": 0,
+    "matched": 1505,
+    "matched_by_index": 0,
+    "sim_frames": 1500
+  },
+  "frames": {
+    "discarded": 7,
+    "drawn": 1512,
+    "present_interval_ms": {
+      "max": 2273.13,
+      "mean": 7.49,
+      "min": 5.56,
+      "n": 1500,
+      "p50": 5.57,
+      "p90": 5.57,
+      "p95": 5.57,
+      "p99": 5.57
+    },
+    "presented": 1501,
+    "refresh_ms": 5.555493
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 9.55,
+      "mean": 5.22,
+      "min": 0.07,
+      "n": 1502,
+      "p50": 5.56,
+      "p90": 5.58,
+      "p95": 5.62,
+      "p99": 5.77
+    },
+    "e2e_sim_to_present": {
+      "max": 185.8,
+      "mean": 93.52,
+      "min": 7.01,
+      "n": 1502,
+      "p50": 93.61,
+      "p90": 161.53,
+      "p95": 170.02,
+      "p99": 177.41
+    },
+    "input_sim_to_app": {
+      "max": 163.28,
+      "mean": 71.76,
+      "min": 0.02,
+      "n": 1505,
+      "p50": 71.09,
+      "p90": 139.3,
+      "p95": 147.76,
+      "p99": 154.99
+    },
+    "submit_to_present": {
+      "max": 17.02,
+      "mean": 16.71,
+      "min": 6.04,
+      "n": 1502,
+      "p50": 16.97,
+      "p90": 16.99,
+      "p95": 17.0,
+      "p99": 17.01
+    }
+  },
+  "meta": {
+    "frame_latency": 1,
+    "k": "meta",
+    "predict_us": 0,
+    "present": "Fifo",
+    "scale": 1.0,
+    "sched": "immediate",
+    "variant": "winit",
+    "winit": "0.31.0-beta.3"
+  },
+  "name": "results/b2-winit-imm-fifo",
+  "strokes": {
+    "app": 5,
+    "sim": 5
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

@@ -1,0 +1,11 @@
+[package]
+name = "au"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+cpal = { version = "0.18", features = ["pipewire"] }
+libc = "0.2.190"
+opus = "0.4"
+serde_json = "1.0.154"

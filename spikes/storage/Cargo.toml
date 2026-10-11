@@ -1,0 +1,6 @@
+[workspace]
+resolver = "3"
+members = ["st"]
+
+[profile.release]
+debug = 1

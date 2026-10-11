@@ -1,0 +1,115 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.06,
+      "mean": 0.04,
+      "min": 0.02,
+      "n": 1505,
+      "p50": 0.04,
+      "p90": 0.05,
+      "p95": 0.05,
+      "p99": 0.06
+    },
+    "pressure_abs_err": {
+      "max": 0.5,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1505,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 14.83,
+      "mean": 14.83,
+      "min": 14.83,
+      "n": 1505,
+      "p50": 14.83,
+      "p90": 14.83,
+      "p95": 14.83,
+      "p99": 14.83
+    }
+  },
+  "contact_events": {
+    "app_events": 1505,
+    "app_from_history": 434,
+    "matched": 1505,
+    "matched_by_index": 0,
+    "sim_frames": 1500
+  },
+  "frames": {
+    "discarded": 0,
+    "drawn": 1072,
+    "present_interval_ms": {
+      "max": 2201.79,
+      "mean": 10.3,
+      "min": 4.28,
+      "n": 1071,
+      "p50": 5.63,
+      "p90": 11.12,
+      "p95": 11.28,
+      "p99": 16.58
+    },
+    "presented": 1072,
+    "refresh_ms": 16.667
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 15.44,
+      "mean": 0.2,
+      "min": 0.02,
+      "n": 1505,
+      "p50": 0.15,
+      "p90": 0.3,
+      "p95": 0.37,
+      "p99": 0.63
+    },
+    "e2e_sim_to_present": {
+      "max": 37.07,
+      "mean": 17.28,
+      "min": 9.82,
+      "n": 1505,
+      "p50": 15.66,
+      "p90": 25.21,
+      "p95": 26.71,
+      "p99": 31.3
+    },
+    "input_sim_to_app": {
+      "max": 22.71,
+      "mean": 4.15,
+      "min": 0.05,
+      "n": 1505,
+      "p50": 3.67,
+      "p90": 8.75,
+      "p95": 10.11,
+      "p99": 12.07
+    },
+    "submit_to_present": {
+      "max": 21.96,
+      "mean": 12.92,
+      "min": 8.82,
+      "n": 1505,
+      "p50": 11.04,
+      "p90": 16.45,
+      "p95": 16.54,
+      "p99": 21.77
+    }
+  },
+  "meta": {
+    "gtk": "4.22.4",
+    "k": "meta",
+    "predict_us": 0,
+    "renderer": "GskVulkanRenderer",
+    "variant": "gtk"
+  },
+  "name": "results/a1-gtk",
+  "strokes": {
+    "app": 5,
+    "sim": 5
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

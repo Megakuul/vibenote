@@ -1,0 +1,118 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.06,
+      "mean": 0.04,
+      "min": 0.02,
+      "n": 1505,
+      "p50": 0.04,
+      "p90": 0.05,
+      "p95": 0.05,
+      "p99": 0.06
+    },
+    "pressure_abs_err": {
+      "max": 0.5,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1505,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1505,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    }
+  },
+  "contact_events": {
+    "app_events": 1505,
+    "app_from_history": 0,
+    "matched": 1505,
+    "matched_by_index": 0,
+    "sim_frames": 1500
+  },
+  "frames": {
+    "discarded": 160,
+    "drawn": 1512,
+    "present_interval_ms": {
+      "max": 2282.2,
+      "mean": 8.21,
+      "min": 5.55,
+      "n": 1351,
+      "p50": 5.56,
+      "p90": 5.56,
+      "p95": 5.56,
+      "p99": 5.56
+    },
+    "presented": 1352,
+    "refresh_ms": 5.555493
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 9.78,
+      "mean": 0.62,
+      "min": 0.06,
+      "n": 1505,
+      "p50": 0.08,
+      "p90": 4.72,
+      "p95": 5.08,
+      "p99": 5.19
+    },
+    "e2e_sim_to_present": {
+      "max": 17.17,
+      "mean": 9.18,
+      "min": 6.28,
+      "n": 1505,
+      "p50": 9.21,
+      "p90": 11.43,
+      "p95": 11.58,
+      "p99": 11.85
+    },
+    "input_sim_to_app": {
+      "max": 5.1,
+      "mean": 0.06,
+      "min": 0.02,
+      "n": 1505,
+      "p50": 0.03,
+      "p90": 0.06,
+      "p95": 0.09,
+      "p99": 0.35
+    },
+    "submit_to_present": {
+      "max": 11.68,
+      "mean": 8.5,
+      "min": 6.17,
+      "n": 1505,
+      "p50": 8.42,
+      "p90": 10.63,
+      "p95": 10.89,
+      "p99": 11.13
+    }
+  },
+  "meta": {
+    "frame_latency": 1,
+    "k": "meta",
+    "predict_us": 0,
+    "present": "Mailbox",
+    "scale": 1.0,
+    "sched": "immediate",
+    "variant": "winit",
+    "winit": "0.31.0-beta.3"
+  },
+  "name": "results/b3-winit-imm-mbx",
+  "strokes": {
+    "app": 5,
+    "sim": 5
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

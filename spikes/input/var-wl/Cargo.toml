@@ -1,0 +1,15 @@
+[package]
+name = "var-wl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+common = { version = "0.1.0", path = "../common" }
+libc = "0.2.190"
+raw-window-handle = "0.6"
+serde_json = "1.0.154"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
+wgpu = "30"

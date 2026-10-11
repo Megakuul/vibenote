@@ -1,0 +1,119 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.06,
+      "mean": 0.04,
+      "min": 0.03,
+      "n": 1500,
+      "p50": 0.04,
+      "p90": 0.05,
+      "p95": 0.05,
+      "p99": 0.06
+    },
+    "pressure_abs_err": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 1500,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 15.0,
+      "mean": 15.0,
+      "min": 15.0,
+      "n": 1500,
+      "p50": 15.0,
+      "p90": 15.0,
+      "p95": 15.0,
+      "p99": 15.0
+    }
+  },
+  "contact_events": {
+    "app_events": 1500,
+    "app_from_history": 0,
+    "matched": 1500,
+    "matched_by_index": 1500,
+    "sim_frames": 1500
+  },
+  "frames": {
+    "discarded": 43278,
+    "drawn": 45421,
+    "present_interval_ms": {
+      "max": 22.22,
+      "mean": 5.57,
+      "min": 5.55,
+      "n": 2137,
+      "p50": 5.56,
+      "p90": 5.56,
+      "p95": 5.56,
+      "p99": 5.56
+    },
+    "presented": 2138,
+    "refresh_ms": 5.555493
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 14.05,
+      "mean": 2.74,
+      "min": 0.17,
+      "n": 1500,
+      "p50": 2.83,
+      "p90": 4.97,
+      "p95": 5.33,
+      "p99": 5.65
+    },
+    "e2e_sim_to_present": {
+      "max": 21.98,
+      "mean": 9.38,
+      "min": 6.54,
+      "n": 1500,
+      "p50": 9.34,
+      "p90": 11.56,
+      "p95": 12.1,
+      "p99": 12.13
+    },
+    "input_sim_to_app": {
+      "max": 6.81,
+      "mean": 0.27,
+      "min": 0.02,
+      "n": 1500,
+      "p50": 0.16,
+      "p90": 0.84,
+      "p95": 0.98,
+      "p99": 1.45
+    },
+    "submit_to_present": {
+      "max": 7.26,
+      "mean": 6.37,
+      "min": 6.13,
+      "n": 1500,
+      "p50": 6.32,
+      "p90": 6.62,
+      "p95": 6.67,
+      "p99": 6.73
+    }
+  },
+  "meta": {
+    "font_load_ms": 7.230921,
+    "k": "meta",
+    "notes": 100000,
+    "present": "Mailbox",
+    "rerun_always": false,
+    "rows": 105000,
+    "text_shape_ms": 2.629702,
+    "text_words": 60,
+    "variant": "ui-spike"
+  },
+  "name": "results/u3-ui-scroll-100k",
+  "strokes": {
+    "app": 5,
+    "sim": 5
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}

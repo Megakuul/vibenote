@@ -1,0 +1,118 @@
+{
+  "accuracy": {
+    "pos_err_px": {
+      "max": 0.04,
+      "mean": 0.03,
+      "min": 0.02,
+      "n": 402,
+      "p50": 0.03,
+      "p90": 0.04,
+      "p95": 0.04,
+      "p99": 0.04
+    },
+    "pressure_abs_err": {
+      "max": 0.5,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 402,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "tilt_abs_err_deg": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 402,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    }
+  },
+  "contact_events": {
+    "app_events": 402,
+    "app_from_history": 0,
+    "matched": 402,
+    "matched_by_index": 0,
+    "sim_frames": 400
+  },
+  "frames": {
+    "discarded": 45,
+    "drawn": 408,
+    "present_interval_ms": {
+      "max": 2659.48,
+      "mean": 14.19,
+      "min": 5.55,
+      "n": 362,
+      "p50": 5.56,
+      "p90": 5.56,
+      "p95": 5.56,
+      "p99": 5.56
+    },
+    "presented": 363,
+    "refresh_ms": 5.555493
+  },
+  "latency_ms": {
+    "app_to_submit": {
+      "max": 9.45,
+      "mean": 0.61,
+      "min": 0.06,
+      "n": 402,
+      "p50": 0.08,
+      "p90": 4.57,
+      "p95": 5.09,
+      "p99": 5.11
+    },
+    "e2e_sim_to_present": {
+      "max": 17.41,
+      "mean": 9.12,
+      "min": 6.42,
+      "n": 402,
+      "p50": 9.2,
+      "p90": 11.42,
+      "p95": 11.66,
+      "p99": 11.67
+    },
+    "input_sim_to_app": {
+      "max": 5.04,
+      "mean": 0.09,
+      "min": 0.02,
+      "n": 402,
+      "p50": 0.04,
+      "p90": 0.09,
+      "p95": 0.43,
+      "p99": 0.59
+    },
+    "submit_to_present": {
+      "max": 11.01,
+      "mean": 8.41,
+      "min": 6.2,
+      "n": 402,
+      "p50": 8.21,
+      "p90": 10.44,
+      "p95": 10.76,
+      "p99": 10.95
+    }
+  },
+  "meta": {
+    "frame_latency": 1,
+    "k": "meta",
+    "predict_us": 0,
+    "present": "Mailbox",
+    "scale": 1.0,
+    "sched": "immediate",
+    "variant": "winit",
+    "winit": "0.31.0-beta.3"
+  },
+  "name": "results/m-winit-s1.5",
+  "strokes": {
+    "app": 2,
+    "sim": 2
+  },
+  "visible_tip": {
+    "lag_ms": null,
+    "lag_px": null
+  }
+}
