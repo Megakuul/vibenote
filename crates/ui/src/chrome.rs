@@ -78,6 +78,8 @@ struct State {
     /// Tree rows, rebuilt when the workspace or the expanded set changes.
     rows: Vec<Row>,
     rows_key: Option<(u64, u64)>,
+    /// Where each visible tree row was laid out last run (logical px; tests and hit checks).
+    row_rects: Vec<(String, egui::Rect)>,
     focus_search: bool,
     focus_find: bool,
 }
@@ -467,7 +469,12 @@ fn tool_buttons(t: vibenote_model::settings::ToolKind) -> [(&'static str, &'stat
     use theme::icon;
     use vibenote_model::settings::ToolKind as T;
     [
-        (icon::PEN, "Pen (P)", "tool.select.pen", t == T::Pen),
+        (
+            icon::PEN,
+            "Pen (P) — hold still at the end of a stroke to snap it into a shape",
+            "tool.select.pen",
+            t == T::Pen,
+        ),
         (
             icon::HIGHLIGHTER,
             "Highlighter (H)",
@@ -774,7 +781,7 @@ fn build(
                                 if ui
                                     .add(egui::Button::new(tidy).min_size(egui::vec2(0.0, 30.0)))
                                     .on_hover_text(
-                                        "Straighten this handwriting (baseline and slant; the ink itself is kept)",
+                                        "Straighten the handwriting (baseline and slant; the ink itself is kept) and turn rough shapes into clean ones",
                                     )
                                     .clicked()
                                 {
@@ -877,9 +884,20 @@ fn build(
             .collapsible(false)
             .resizable(false)
             .show(&ctx, |ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(240.0));
-                r.request_focus();
-                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let mut o = egui::TextEdit::singleline(&mut name).desired_width(240.0).show(ui);
+                let r = o.response;
+                // Enter in the field confirms (it may already have dropped focus this frame).
+                let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if !enter && !r.has_focus() {
+                    // Just opened: focus with the whole name selected, so typing replaces it.
+                    let all = egui::text::CCursorRange::two(
+                        egui::text::CCursor::new(0),
+                        egui::text::CCursor::new(name.chars().count()),
+                    );
+                    o.state.cursor.set_char_range(Some(all));
+                    o.state.store(ui.ctx(), r.id);
+                    r.request_focus();
+                }
                 ui.horizontal(|ui| {
                     if ui.button("Rename").clicked() || enter {
                         let (cmd, id) = match item {
@@ -905,12 +923,19 @@ fn build(
 
 /// One tree row: indentation guides, a chevron for folders, the item's icon in its colour and
 /// the name; hover and the open note are highlighted.
-fn tree_row(ui: &mut egui::Ui, row: &Row, selected: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), egui::Sense::click());
-    let p = ui.painter();
+/// One widget senses both clicks and drags: egui then tells a click (open, expand) from a drag
+/// (move) by the distance moved; a separate drag widget on top would take every click.
+fn tree_row(ui: &mut egui::Ui, id: egui::Id, row: &Row, selected: bool) -> egui::Response {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), egui::Sense::hover());
+    let resp = ui.interact(rect, id, egui::Sense::click_and_drag());
+    paint_row(ui.painter(), rect, row, selected, resp.hovered());
+    resp
+}
+
+fn paint_row(p: &egui::Painter, rect: egui::Rect, row: &Row, selected: bool, hovered: bool) {
     if selected {
         p.rect_filled(rect, 6.0, theme::SELECTED);
-    } else if resp.hovered() {
+    } else if hovered {
         p.rect_filled(rect, 6.0, theme::HOVER);
     }
     #[allow(clippy::cast_precision_loss)] // a few levels of indentation
@@ -958,7 +983,6 @@ fn tree_row(ui: &mut egui::Ui, row: &Row, selected: bool) -> egui::Response {
     let clip = egui::Rect::from_min_max(egui::pos2(x, rect.top()), egui::pos2(rect.right() - 4.0, rect.bottom()));
     p.with_clip_rect(clip)
         .galley(egui::pos2(x, cy - name.size().y / 2.0), name, theme::TEXT);
-    resp
 }
 
 fn tree(st: &mut State, eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) {
@@ -985,7 +1009,13 @@ fn tree(st: &mut State, eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) 
     ui.add_space(4.0);
     let mut toggle = None;
     let current = s.current_note.map(|n| n.0);
-    let State { rows, rename, .. } = st;
+    let State {
+        rows,
+        rename,
+        row_rects,
+        ..
+    } = st;
+    row_rects.clear();
     let rows = &*rows;
     egui::ScrollArea::vertical()
         .auto_shrink(false)
@@ -994,16 +1024,31 @@ fn tree(st: &mut State, eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) 
             for row in rows.get(range).unwrap_or(&[]) {
                 let id = egui::Id::new(("row", row.item));
                 let selected = matches!(row.item, Item::Note(n) if Some(n) == current);
-                // Drag a row onto a folder to move it (R-ORG-002).
-                let r = ui.dnd_drag_source(id, row.item, |ui| tree_row(ui, row, selected)).inner;
-                if r.clicked() {
+                let r = tree_row(ui, id, row, selected);
+                row_rects.push((row.name.clone(), r.rect));
+                if r.double_clicked() {
+                    // Double-click renames (the first click already toggled or opened).
+                    *rename = Some((row.item, row.name.clone()));
+                } else if r.clicked() {
                     match row.item {
                         Item::Folder(f) => toggle = Some(f),
                         Item::Note(n) => out.push(Action::Show { note: n, region: None }),
                     }
                 }
+                // Drag a row onto a folder to move it (R-ORG-002): the row follows the pointer.
+                if r.dragged() {
+                    egui::DragAndDrop::set_payload(ui.ctx(), row.item);
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                    if let Some(p) = ui.ctx().pointer_interact_pos() {
+                        let layer = egui::LayerId::new(egui::Order::Tooltip, id);
+                        let ghost = egui::Rect::from_center_size(p, r.rect.size());
+                        let painter = ui.ctx().layer_painter(layer);
+                        painter.rect_filled(ghost, 6.0, theme::HOVER);
+                        paint_row(&painter, ghost, row, selected, false);
+                    }
+                }
                 if let Item::Folder(target) = row.item
-                    && r.dnd_hover_payload::<Item>().is_some()
+                    && r.dnd_hover_payload::<Item>().is_some_and(|p| *p != row.item)
                 {
                     ui.painter().rect_stroke(
                         r.rect,
@@ -1154,6 +1199,16 @@ fn settings(eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) {
         }
     });
     ui.separator();
+    ui.label("Shapes from ink");
+    let mut lift = st.snap_on_lift;
+    if ui
+        .checkbox(&mut lift, "Snap rough shapes when the pen lifts")
+        .on_hover_text("Off: hold the pen still for half a second at the end of a stroke, or lasso it and press Tidy")
+        .changed()
+    {
+        out.push(Action::Cmd("settings.set", json!({ "snap_on_lift": lift })));
+    }
+    ui.separator();
     for (k, label, cur) in [
         ("barrel1", "Pen button 1", st.barrel1),
         ("barrel2", "Pen button 2", st.barrel2),
@@ -1189,6 +1244,28 @@ fn settings(eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) {
 }
 
 impl Chrome {
+    /// A folder or note was just created from the chrome: show it (expand its parent) and open
+    /// the rename field so it gets a real name right away.
+    pub fn created(&mut self, cmd: &str, params: &Value, result: &Value) {
+        let Some(id) = result["id"].as_u64() else { return };
+        let (item, parent, name) = match cmd {
+            "workspace.folder.create" => (Item::Folder(id), params["parent"].as_u64(), "New folder"),
+            "workspace.note.create" => (Item::Note(id), params["folder"].as_u64(), "Untitled"),
+            _ => return,
+        };
+        if let Some(p) = parent {
+            self.st.expanded.insert(p);
+        }
+        let name = params["name"].as_str().unwrap_or(name).to_string();
+        self.st.rename = Some((item, name));
+        self.dirty = true;
+    }
+
+    /// The visible tree rows (name, rect in logical px) from the last run.
+    pub fn tree_rows(&self) -> Vec<(String, egui::Rect)> {
+        self.st.row_rects.clone()
+    }
+
     /// Search results held (tests).
     pub fn result_count(&self) -> usize {
         self.st.hits.iter().map(|g| g.1.len()).sum()

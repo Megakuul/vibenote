@@ -101,6 +101,8 @@ struct SettingsP {
     barrel2: Option<BarrelP>,
     /// What the shape tool draws (R-SHAPE-001).
     shape: Option<ShapeP>,
+    /// Snap rough shapes when the pen lifts instead of after holding still (R-SHAPE-002).
+    snap_on_lift: Option<bool>,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -194,7 +196,7 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "settings.set",
-            doc: "Change workspace settings (tool, eraser_mode, prettify_mode, block_idle_ms, prediction_ms, background, barrel1, barrel2, shape); returns all settings.",
+            doc: "Change workspace settings (tool, eraser_mode, prettify_mode, block_idle_ms, prediction_ms, background, barrel1, barrel2, shape, snap_on_lift); returns all settings.",
             reqs: &["R-PEN-006", "R-PEN-010", "R-HWR-001", "R-HWR-006", "R-CANVAS-006"],
             implemented: true,
         },
@@ -213,6 +215,7 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
                 barrel1: p.barrel1.map_or(c.barrel1, barrel),
                 barrel2: p.barrel2.map_or(c.barrel2, barrel),
                 shape: p.shape.map_or(c.shape, shape),
+                snap_on_lift: p.snap_on_lift.unwrap_or(c.snap_on_lift),
             };
             update(s, next)
         },

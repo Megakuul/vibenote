@@ -1,4 +1,10 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::arithmetic_side_effects
+)]
 //! The app chrome (M11, ADR 0002) without a window: layout, hit areas, keyboard flows, and a
 //! headless screenshot (written to the target dir for review).
 
@@ -97,4 +103,116 @@ fn search_and_find_follow_the_keyboard() {
     assert!(!c.needs_run(vm(&e)));
     e.execute("view.pan", json!({"dx": 40.0, "dy": 0.0})).unwrap();
     assert!(c.needs_run(vm(&e)));
+}
+
+/// Clicks (press, frame, release, frame) at `p` with `jitter` px of movement in between, as a
+/// pen tip or a slightly moving mouse does.
+fn click(c: &mut Chrome, e: &Engine, p: egui::Pos2, jitter: f32) -> Vec<Action> {
+    let size = (1000.0, 640.0);
+    let mut out = Vec::new();
+    c.event(egui::Event::PointerMoved(p));
+    out.extend(c.run(e, size, 1.0, vm(e)));
+    c.event(egui::Event::PointerButton {
+        pos: p,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    out.extend(c.run(e, size, 1.0, vm(e)));
+    let q = p + egui::vec2(jitter, jitter / 2.0);
+    c.event(egui::Event::PointerMoved(q));
+    out.extend(c.run(e, size, 1.0, vm(e)));
+    c.event(egui::Event::PointerButton {
+        pos: q,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    out.extend(c.run(e, size, 1.0, vm(e)));
+    out.extend(c.run(e, size, 1.0, vm(e)));
+    out
+}
+
+fn row(c: &Chrome, name: &str) -> Option<egui::Rect> {
+    c.tree_rows().into_iter().find(|(n, _)| n == name).map(|(_, r)| r)
+}
+
+#[test]
+fn clicking_a_folder_expands_it_even_with_a_little_movement() {
+    let e = workspace();
+    let mut c = Chrome::new();
+    c.run(&e, (1000.0, 640.0), 1.0, vm(&e));
+    let uni = row(&c, "Uni").expect("folder row");
+    assert!(row(&c, "Lineare Algebra").is_none(), "collapsed at start");
+    click(&mut c, &e, uni.center(), 0.0);
+    assert!(row(&c, "Lineare Algebra").is_some(), "a click expands the folder");
+    // Past the double-click time, so this is a second single click.
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    click(&mut c, &e, uni.center(), 3.0);
+    assert!(
+        row(&c, "Lineare Algebra").is_none(),
+        "a click with 3 px of jitter collapses it"
+    );
+}
+
+#[test]
+fn double_click_renames_and_dragging_a_note_onto_a_folder_moves_it() {
+    let e = workspace();
+    let mut c = Chrome::new();
+    let size = (1000.0, 640.0);
+    c.run(&e, size, 1.0, vm(&e));
+    let ideas = row(&c, "Ideas").unwrap();
+    let mut a = click(&mut c, &e, ideas.center(), 0.0);
+    a.extend(click(&mut c, &e, ideas.center(), 0.0));
+    assert!(matches!(a.first(), Some(Action::Show { .. })), "{a:?}");
+    c.run(&e, size, 1.0, vm(&e));
+    assert!(c.wants_keyboard(), "the rename field has focus");
+    // The name is selected when the field opens: typing replaces it.
+    c.event(egui::Event::Text("Plans".into()));
+    c.event(egui::Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    let mut a = c.run(&e, size, 1.0, vm(&e));
+    a.extend(c.run(&e, size, 1.0, vm(&e)));
+    assert!(
+        a.iter()
+            .any(|x| matches!(x, Action::Cmd("workspace.note.rename", v) if v["name"] == "Plans")),
+        "{a:?}"
+    );
+
+    // Drag "Ideas" onto "Uni".
+    let uni = row(&c, "Uni").unwrap();
+    let ideas = row(&c, "Ideas").unwrap();
+    let press = |c: &mut Chrome, p: egui::Pos2, down: bool| {
+        c.event(egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: down,
+            modifiers: egui::Modifiers::NONE,
+        });
+    };
+    c.event(egui::Event::PointerMoved(ideas.center()));
+    c.run(&e, size, 1.0, vm(&e));
+    press(&mut c, ideas.center(), true);
+    c.run(&e, size, 1.0, vm(&e));
+    let mut a = Vec::new();
+    for i in 1..=10u8 {
+        let t = f32::from(i) / 10.0;
+        c.event(egui::Event::PointerMoved(ideas.center().lerp(uni.center(), t)));
+        a.extend(c.run(&e, size, 1.0, vm(&e)));
+    }
+    press(&mut c, uni.center(), false);
+    a.extend(c.run(&e, size, 1.0, vm(&e)));
+    assert!(
+        a.iter().any(|x| matches!(x, Action::Cmd("workspace.note.move", _))),
+        "{a:?}"
+    );
+    assert!(
+        !a.iter().any(|x| matches!(x, Action::Show { .. })),
+        "a drag is no click: {a:?}"
+    );
 }

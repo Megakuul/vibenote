@@ -125,6 +125,7 @@ fn finish(s: &mut Session, out: &mut BatchResult) {
     let end_us = ls.t0_us.saturating_add(ls.samples.last().map_or(0, |p| p.t_us));
     match crate::tool_stroke(s.settings.tool, ls.samples) {
         Some(stroke) => match super::ink::add_stroke(s, ls.note, stroke, Some(ls.t0_us)) {
+            Ok(id) if lift_snap(s, ls.note, id.0, ls.tool, ls.button) => out.committed.push(id.0),
             Ok(id) => {
                 out.committed.push(id.0);
                 // Writing blocks for recognition (R-HWR-001, R-HWR-008).
@@ -137,6 +138,28 @@ fn finish(s: &mut Session, out: &mut BatchResult) {
             .errors
             .push(EngineError::NotImplemented(format!("pen input with the {:?} tool", s.settings.tool)).to_string()),
     }
+}
+
+/// With `snap_on_lift`, a pen stroke this large (screen px) that looks like a shape becomes one
+/// when the pen lifts; smaller strokes are left as ink (letters such as "o" or "l").
+const LIFT_SNAP_MIN_PX: f64 = 64.0;
+
+/// The owner's opt-in (`settings.snap_on_lift`): snaps a just-committed pen stroke that looks
+/// like a shape (its own undo step back to the ink). Returns true if it snapped.
+fn lift_snap(s: &mut Session, note: vibenote_model::NoteId, id: u64, tool: PenTool, button: Option<u32>) -> bool {
+    use vibenote_model::settings::ToolKind;
+    if !s.settings.snap_on_lift
+        || s.settings.tool != ToolKind::Pen
+        || tool != PenTool::Pen
+        || s.barrel(button).is_some()
+    {
+        return false;
+    }
+    let min = LIFT_SNAP_MIN_PX / s.zoom();
+    let Ok(Some((ops, _, _))) = super::shape::snap_ops(s, note, id, min) else {
+        return false;
+    };
+    s.commit(crate::Scope::Note(note), "snap shape", ops).is_ok()
 }
 
 /// Drags shorter than this (screen px) are taps.

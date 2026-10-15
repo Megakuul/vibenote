@@ -635,7 +635,7 @@ impl App {
                 }
             }
         };
-        let text_box = |content: String| serde_json::json!({"at": [x, y], "width": 360.0 / zoom, "size": 16.0 / zoom, "content": content});
+        let text_box = |content: String, markdown: bool| serde_json::json!({"at": [x, y], "width": 360.0 / zoom, "size": 16.0 / zoom, "content": content, "markdown": markdown});
         match p.kind {
             Kind::Own => {}
             Kind::Text(_) => {
@@ -643,7 +643,7 @@ impl App {
                 if self.engine.session.text_edit.is_some() {
                     run(self, "text.input", serde_json::json!({ "text": text }));
                 } else if !text.trim().is_empty()
-                    && let Some(r) = run(self, "text.create", text_box(text))
+                    && let Some(r) = run(self, "text.create", text_box(text, true))
                 {
                     inserted.extend(r.get("id").and_then(serde_json::Value::as_u64));
                 }
@@ -683,7 +683,10 @@ impl App {
                         Some(clip::FileKind::Text) => match std::fs::metadata(&path) {
                             Ok(m) if m.len() <= 1 << 20 => match std::fs::read_to_string(&path) {
                                 Ok(t) => run(self, "text.create", {
-                                    let mut v = text_box(t);
+                                    let md = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                                        e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown")
+                                    });
+                                    let mut v = text_box(t, md);
                                     if let Some(o) = v.as_object_mut() {
                                         o.insert("at".into(), at);
                                     }
@@ -839,8 +842,11 @@ impl App {
             match a {
                 Action::Cmd(name, params) => {
                     let params = self.ui_params(name, params);
-                    match self.engine.execute(name, params) {
+                    match self.engine.execute(name, params.clone()) {
                         Ok(_) if name == "clipboard.copy" || name == "clipboard.cut" => self.claim_clipboard(),
+                        Ok(r) if name == "workspace.folder.create" || name == "workspace.note.create" => {
+                            self.chrome.created(name, &params, &r);
+                        }
                         Ok(_) => {}
                         Err(e) => eprintln!("vibenote: {name}: {e}"),
                     }

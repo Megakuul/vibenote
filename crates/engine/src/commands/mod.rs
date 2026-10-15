@@ -9,6 +9,7 @@ mod ink;
 pub(crate) mod input;
 pub(crate) mod keymap;
 mod link;
+pub(crate) mod markdown;
 mod order;
 pub(crate) mod pdf;
 mod quickopen;

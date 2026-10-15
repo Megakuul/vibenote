@@ -112,6 +112,9 @@ pub struct Settings {
     pub barrel2: BarrelAction,
     /// What the shape tool draws (R-SHAPE-001).
     pub shape: crate::ShapeKind,
+    /// Rough shapes snap to clean ones as soon as the pen lifts, without holding still
+    /// (R-SHAPE-002 asks for the hold; this is the owner's opt-in, default off).
+    pub snap_on_lift: bool,
 }
 
 impl Default for Settings {
@@ -126,6 +129,7 @@ impl Default for Settings {
             barrel1: BarrelAction::Lasso,
             barrel2: BarrelAction::Eraser,
             shape: crate::ShapeKind::Rectangle,
+            snap_on_lift: false,
         }
     }
 }

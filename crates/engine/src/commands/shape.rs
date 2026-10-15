@@ -153,10 +153,33 @@ pub(crate) fn snap(
     note: vibenote_model::NoteId,
     stroke: u64,
 ) -> Result<Option<(ShapeKind, u64)>, EngineError> {
+    if !matches!(super::pdf::object(s, note, stroke)?.kind, ObjectKind::Stroke(_)) {
+        return Err(EngineError::Model(format!("object {stroke} is not a stroke")));
+    }
+    let Some((ops, kind, id)) = snap_ops(s, note, stroke, 0.0)? else {
+        return Ok(None);
+    };
+    s.commit(Scope::Note(note), "snap shape", ops)?;
+    Ok(Some((kind, id)))
+}
+
+/// The ops that replace stroke `stroke` by the clean shape it looks like, the shape's kind and
+/// new id; `None` if it is not a stroke, does not look like a shape, or its box is smaller than
+/// `min_side` (canvas units).
+pub(crate) fn snap_ops(
+    s: &mut Session,
+    note: vibenote_model::NoteId,
+    stroke: u64,
+    min_side: f64,
+) -> Result<Option<(Vec<Op>, ShapeKind, u64)>, EngineError> {
     let o = super::pdf::object(s, note, stroke)?;
     let ObjectKind::Stroke(st) = &o.kind else {
-        return Err(EngineError::Model(format!("object {stroke} is not a stroke")));
+        return Ok(None);
     };
+    let b = st.bounds();
+    if b.width().max(b.height()) < min_side {
+        return Ok(None);
+    }
     let pts: Vec<Point> = st.samples.iter().map(|q| Point::new(q.x, q.y)).collect();
     let Some(found) = vibenote_ink::shapes::classify(&pts) else {
         return Ok(None);
@@ -173,15 +196,14 @@ pub(crate) fn snap(
         },
     };
     let id = shape.id.0;
-    s.commit(
-        Scope::Note(note),
-        "snap shape",
+    Ok(Some((
         vec![
             Op::RemoveObject { note, object: o },
             Op::InsertObject { note, object: shape },
         ],
-    )?;
-    Ok(Some((found.kind, id)))
+        found.kind,
+        id,
+    )))
 }
 
 pub fn register(r: &mut Registry) -> Result<(), EngineError> {

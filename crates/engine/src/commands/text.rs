@@ -16,6 +16,9 @@ struct CreateP {
     width: f64,
     #[serde(default)]
     content: String,
+    /// `content` is markdown (headings, lists, checkboxes, bold, italic, strike): formatted.
+    #[serde(default)]
+    markdown: bool,
     /// Font size (canvas units per em, default 16).
     size: Option<f32>,
     note: Option<u64>,
@@ -238,7 +241,7 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "text.create",
-            doc: "Create a text box at a canvas point with a wrap width (one undo step).",
+            doc: "Create a text box at a canvas point with a wrap width (one undo step); `markdown: true` formats markdown content (headings, lists, checkboxes, bold, italic, strike).",
             reqs: &["R-TEXT-001", "R-TEXT-003", "R-CANVAS-003"],
             implemented: true,
         },
@@ -246,14 +249,20 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
             let note = super::ink::target_note(s, p.note)?;
             let z = s.next_z(note)?;
             let id = ObjectId(s.ws.alloc_id()?);
+            let (content, mut marks) = if p.markdown {
+                super::markdown::parse(&p.content)
+            } else {
+                (p.content, Vec::new())
+            };
+            normalise(&mut marks);
             let object = CanvasObject {
                 id,
                 z,
                 kind: ObjectKind::Text {
                     origin: Point::new(p.at[0], p.at[1]),
                     width: p.width,
-                    content: p.content,
-                    marks: Vec::new(),
+                    content,
+                    marks,
                     size: p.size.unwrap_or_else(vibenote_model::default_text_size),
                 },
             };
@@ -355,6 +364,14 @@ pub struct TextEdit {
     /// A tap in the box the UI places the caret for with the real layout (`text.caret`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub place: Option<(f64, f64)>,
+    /// Paragraph styles the next typed text gets: a markdown prefix on an empty line (`# `,
+    /// `- `) or Enter in a list. Moving the caret drops them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pending: Vec<TextStyle>,
+    /// The caret is right after a span markdown just formatted (`**bold**`): typing goes on
+    /// unformatted instead of continuing it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub plain: bool,
 }
 
 impl TextEdit {
@@ -399,6 +416,8 @@ pub(crate) fn tap(s: &mut Session, note: vibenote_model::NoteId, at: (f64, f64))
         caret: 0,
         anchor: 0,
         place: None,
+        pending: Vec::new(),
+        plain: false,
     });
     Ok(())
 }
@@ -429,6 +448,8 @@ pub(crate) fn edit(s: &mut Session, note: vibenote_model::NoteId, id: u64, at: (
         caret: end,
         anchor: end,
         place: Some(at),
+        pending: Vec::new(),
+        plain: false,
     });
     Ok(())
 }
@@ -502,14 +523,29 @@ fn type_text(s: &mut Session, mut ed: TextEdit, text: &str) -> Result<TextEdit, 
                 (!text.is_empty()).then_some(text),
                 Some(a),
             )?;
-            // Typed text continues the formatting it follows.
+            // Typed text continues the formatting it follows; a new line takes its paragraph
+            // style only from `pending` (a list goes on, a heading does not).
+            let mut caret = a.saturating_add(k);
             if k > 0 {
+                let line_start = a == 0 || content.chars().nth(char_index(a.saturating_sub(1))) == Some('\n');
                 for m in marks.iter_mut() {
-                    if m.end == a && m.start < a {
+                    let para = m.style.is_paragraph();
+                    if m.end == a && m.start < a && !(para && line_start) && !(ed.plain && !para) {
                         m.end = m.end.saturating_add(k);
                     }
                 }
+                for st in ed.pending.drain(..) {
+                    marks.push(TextMark {
+                        start: a,
+                        end: a.saturating_add(k),
+                        style: st,
+                    });
+                }
+                ed.plain = false;
                 normalise(marks);
+                if k == 1 && a == b {
+                    caret = markdown_shortcut(content, marks, &mut ed, caret)?;
+                }
             }
             let id = o.id.0;
             s.commit_typing(
@@ -520,7 +556,7 @@ fn type_text(s: &mut Session, mut ed: TextEdit, text: &str) -> Result<TextEdit, 
                     after: o,
                 }],
             )?;
-            ed.caret = a.saturating_add(k);
+            ed.caret = caret;
         }
         None if !text.is_empty() => {
             let z = s.next_z(ed.note)?;
@@ -544,6 +580,80 @@ fn type_text(s: &mut Session, mut ed: TextEdit, text: &str) -> Result<TextEdit, 
     }
     ed.anchor = ed.caret;
     Ok(ed)
+}
+
+fn char_index(c: u32) -> usize {
+    usize::try_from(c).unwrap_or(usize::MAX)
+}
+
+/// Applies the markdown shortcut the character just typed before `caret` completes (see
+/// [`super::markdown`]); returns where the caret is afterwards.
+fn markdown_shortcut(
+    content: &mut String,
+    marks: &mut Vec<TextMark>,
+    ed: &mut TextEdit,
+    caret: u32,
+) -> Result<u32, EngineError> {
+    let chars: Vec<char> = content.chars().collect();
+    let c = char_index(caret);
+    let ls = chars
+        .get(..c)
+        .and_then(|h| h.iter().rposition(|x| *x == '\n'))
+        .map_or(0, |i| i.saturating_add(1));
+    let le = chars
+        .get(c..)
+        .and_then(|t| t.iter().position(|x| *x == '\n'))
+        .map_or(chars.len(), |i| c.saturating_add(i));
+    let to_u32 = |x: usize| u32::try_from(x).unwrap_or(u32::MAX);
+    // A line-start prefix finished by a space: "# ", "- ", "1. ", "[ ] " …
+    if chars.get(c.saturating_sub(1)) == Some(&' ')
+        && let Some(prefix) = chars.get(ls..c.saturating_sub(1))
+        && let Some(style) = super::markdown::block_prefix(&prefix.iter().collect::<String>())
+    {
+        let (a, b) = (to_u32(ls), to_u32(c));
+        splice(content, marks, Some([a, b]), None, None)?;
+        let le = to_u32(le).saturating_sub(b.saturating_sub(a));
+        for p in [
+            TextStyle::Heading1,
+            TextStyle::Heading2,
+            TextStyle::Heading3,
+            TextStyle::BulletList,
+            TextStyle::NumberedList,
+            TextStyle::Checkbox { checked: false },
+        ] {
+            clear(marks, std::mem::discriminant(&p), a, le.max(a.saturating_add(1)));
+        }
+        if le > a {
+            marks.push(TextMark {
+                start: a,
+                end: le,
+                style,
+            });
+            normalise(marks);
+        } else {
+            ed.pending = vec![style];
+        }
+        return Ok(a);
+    }
+    // An inline span closed: "**bold**", "*italic*", "~~strike~~" …
+    let line = chars.get(ls..le).unwrap_or(&[]);
+    if let Some((o, n, styles)) = super::markdown::inline_close(line, c.saturating_sub(ls)) {
+        let (open, close, n32) = (to_u32(ls.saturating_add(o)), to_u32(c.saturating_sub(n)), to_u32(n));
+        splice(content, marks, Some([close, caret]), None, None)?;
+        splice(content, marks, Some([open, open.saturating_add(n32)]), None, None)?;
+        let end = close.saturating_sub(n32);
+        for st in styles {
+            marks.push(TextMark {
+                start: open,
+                end,
+                style: *st,
+            });
+        }
+        normalise(marks);
+        ed.plain = true;
+        return Ok(end);
+    }
+    Ok(caret)
 }
 
 /// Character offsets where the lines of `t` start.
@@ -630,7 +740,33 @@ fn key(s: &mut Session, mut ed: TextEdit, k: KeyP, shift: bool) -> Result<Option
     };
     match k {
         KeyP::Escape => return Ok(None),
-        KeyP::Enter => return type_text(s, ed, "\n").map(Some),
+        // Enter on an empty list item ends the list; Backspace there drops its bullet.
+        KeyP::Enter | KeyP::Backspace if a == b && line_start == line_end && !ed.pending.is_empty() => {
+            ed.pending.clear();
+            return Ok(Some(ed));
+        }
+        KeyP::Enter => {
+            // A list goes on in the next line (a checked box continues unchecked); a heading
+            // does not.
+            let next: Vec<TextStyle> = match &o {
+                Some(CanvasObject {
+                    kind: ObjectKind::Text { marks, .. },
+                    ..
+                }) if line_start < line_end => marks
+                    .iter()
+                    .filter(|m| m.start < line_end && m.end > line_start)
+                    .filter_map(|m| match m.style {
+                        TextStyle::BulletList | TextStyle::NumberedList => Some(m.style),
+                        TextStyle::Checkbox { .. } => Some(TextStyle::Checkbox { checked: false }),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let mut ed = type_text(s, ed, "\n")?;
+            ed.pending = next;
+            return Ok(Some(ed));
+        }
         KeyP::Backspace | KeyP::Delete if a < b => return type_text(s, ed, "").map(Some),
         KeyP::Backspace if a > 0 => {
             ed.anchor = a.saturating_sub(1);
@@ -672,8 +808,11 @@ fn key(s: &mut Session, mut ed: TextEdit, k: KeyP, shift: bool) -> Result<Option
             ed.caret = len;
         }
     }
-    // Moving the caret starts a new undo step for the next typing.
+    // Moving the caret starts a new undo step for the next typing and drops what markdown
+    // left pending.
     s.coalesce = None;
+    ed.pending.clear();
+    ed.plain = false;
     Ok(Some(ed))
 }
 
@@ -721,6 +860,8 @@ pub(crate) fn register_editing(r: &mut Registry) -> Result<(), EngineError> {
                 ed.anchor = ed.caret;
             }
             ed.place = None;
+            ed.pending.clear();
+            ed.plain = false;
             s.coalesce = None;
             s.text_edit = Some(ed.clone());
             Ok(ed)

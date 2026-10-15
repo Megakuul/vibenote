@@ -9,6 +9,10 @@ use std::path::PathBuf;
 use vibenote_hwr::blocks::TimedStroke;
 use vibenote_model::{NoteId, ObjectId, ObjectKind};
 
+/// In a multi-stroke selection, Tidy turns strokes at least this large (screen px) into clean
+/// shapes when they look like one; smaller ones are taken as handwriting.
+const TIDY_SHAPE_MIN_PX: f64 = 64.0;
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct PacksP {
@@ -438,8 +442,8 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "selection.tidy",
-            doc: "Prettify the handwriting in the selection on request (`revert: true`: show it as written again). The selected strokes (with any already prettified block they belong to) become one block; one undo step. Strokes never change (display transforms, ADR 0008).",
-            reqs: &["R-HWR-004", "R-HWR-005"],
+            doc: "Tidy the selection on request (`revert: true`: show the handwriting as written again). Rough shapes (strokes ≥ 64 px that look like a line, arrow, rectangle, ellipse or triangle; a single selected stroke at any size) become clean shapes; the handwriting (with any already prettified block it belongs to) becomes one straightened block (display transforms, ADR 0008). One undo step back to the ink.",
+            reqs: &["R-HWR-004", "R-HWR-005", "R-SHAPE-002"],
             implemented: true,
         },
         |s: &mut Session, p: TidyP| {
@@ -459,6 +463,29 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
             if strokes.is_empty() {
                 return Err(EngineError::Model("no handwriting selected".into()));
             }
+            // Rough shapes in the selection (large strokes that look like a line, arrow,
+            // rectangle, ellipse or triangle) become clean shapes; a stroke selected on its own
+            // is a drawing whatever its size (R-SHAPE-002, on request instead of held). The rest
+            // is handwriting and is straightened (display transforms; strokes never change).
+            let mut ops: Vec<vibenote_model::Op> = Vec::new();
+            let mut shaped: Vec<(u64, u64)> = Vec::new();
+            if !p.revert {
+                let min = if strokes.len() == 1 {
+                    0.0
+                } else {
+                    TIDY_SHAPE_MIN_PX / s.zoom()
+                };
+                for id in &strokes {
+                    if let Some((o, _, new)) = super::shape::snap_ops(s, note, *id, min)? {
+                        ops.extend(o);
+                        shaped.push((*id, new));
+                    }
+                }
+            }
+            let strokes: Vec<u64> = strokes
+                .into_iter()
+                .filter(|id| !shaped.iter().any(|(old, _)| old == id))
+                .collect();
             // Prettified blocks the selection touches come off (and join the new block).
             let touched: Vec<(ObjectId, vibenote_model::Prettify)> = s
                 .ws
@@ -469,15 +496,12 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
                 .filter(|(_, b)| b.strokes.iter().any(|id| strokes.contains(&id.0)))
                 .map(|(k, b)| (*k, b.clone()))
                 .collect();
-            let mut ops: Vec<vibenote_model::Op> = touched
-                .iter()
-                .map(|(block, _)| vibenote_model::Op::SetPrettify {
-                    note,
-                    block: *block,
-                    after: None,
-                })
-                .collect();
-            if !p.revert {
+            ops.extend(touched.iter().map(|(block, _)| vibenote_model::Op::SetPrettify {
+                note,
+                block: *block,
+                after: None,
+            }));
+            if !p.revert && !strokes.is_empty() {
                 let mut ids = strokes;
                 for (_, b) in &touched {
                     ids.extend(b.strokes.iter().map(|i| i.0));
@@ -485,20 +509,30 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
                 ids.sort_unstable();
                 ids.dedup();
                 let pts = stroke_points(s, note, &ids)?;
-                let pr = vibenote_hwr::prettify::stage1(&pts)
-                    .ok_or_else(|| EngineError::Model("nothing to tidy".into()))?;
-                let block = ObjectId(*ids.first().ok_or_else(|| EngineError::Model("no strokes".into()))?);
-                ops.push(vibenote_model::Op::SetPrettify {
-                    note,
-                    block,
-                    after: Some(vibenote_model::Prettify {
-                        strokes: ids.iter().map(|i| ObjectId(*i)).collect(),
-                        transforms: pr.transforms,
-                    }),
-                });
+                match vibenote_hwr::prettify::stage1(&pts) {
+                    Some(pr) => {
+                        let block = ObjectId(*ids.first().ok_or_else(|| EngineError::Model("no strokes".into()))?);
+                        ops.push(vibenote_model::Op::SetPrettify {
+                            note,
+                            block,
+                            after: Some(vibenote_model::Prettify {
+                                strokes: ids.iter().map(|i| ObjectId(*i)).collect(),
+                                transforms: pr.transforms,
+                            }),
+                        });
+                    }
+                    None if shaped.is_empty() => return Err(EngineError::Model("nothing to tidy".into())),
+                    None => {}
+                }
             }
             if ops.is_empty() {
                 return Ok(());
+            }
+            // The selection follows the strokes that became shapes.
+            for id in &mut s.selection.ids {
+                if let Some((_, new)) = shaped.iter().find(|(old, _)| old == id) {
+                    *id = *new;
+                }
             }
             s.commit(crate::Scope::Note(note), if p.revert { "revert tidy" } else { "tidy" }, ops)
         },

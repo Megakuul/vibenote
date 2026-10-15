@@ -656,3 +656,80 @@ fn holding_the_mouse_still_snaps_a_shape_too() {
     mouse(&mut e, "up", 100.0, 102.0);
     assert_eq!(strokes(&e, n), 0);
 }
+
+#[test]
+fn with_snap_on_lift_large_shapes_snap_when_the_pen_lifts_letters_stay_ink() {
+    let (mut e, n) = setup();
+    e.execute("settings.set", json!({"snap_on_lift": true})).unwrap();
+    let t = rough_rectangle(&mut e, 1_000_000);
+    assert!(!e.tick_pen(t + 100_000).unwrap(), "no hold needed");
+    pen(&mut e, "up", 100.0, 101.0);
+    assert_eq!((strokes(&e, n), shapes(&e, n).len()), (0, 1));
+    assert_eq!(shapes(&e, n)[0].0, vibenote_model::ShapeKind::Rectangle);
+    e.execute("edit.undo", json!({})).unwrap();
+    assert_eq!((strokes(&e, n), shapes(&e, n).len()), (1, 0), "undo returns the ink");
+    // A letter "o" (12 px) stays ink.
+    let mut events = vec![json!({"t_us": 0, "kind": "down", "tool": "pen", "x": 10.0, "y": 10.0, "p": 0.5})];
+    for i in 1..=24 {
+        let a = f64::from(i) / 24.0 * std::f64::consts::TAU;
+        events.push(json!({"t_us": i * 10_000, "kind": "motion", "tool": "pen", "x": 10.0 + 6.0 * a.sin(), "y": 16.0 - 6.0 * a.cos(), "p": 0.5}));
+    }
+    e.execute("input.pen", json!({ "events": events })).unwrap();
+    pen(&mut e, "up", 10.0, 10.0);
+    assert_eq!((strokes(&e, n), shapes(&e, n).len()), (2, 0));
+}
+
+#[test]
+fn tidy_turns_rough_shapes_into_clean_ones_and_straightens_the_writing() {
+    let (mut e, n) = setup();
+    // A big rough rectangle drawn as ink…
+    let t = rough_rectangle(&mut e, 1_000_000);
+    pen(&mut e, "up", 100.0, 101.0);
+    let _ = t;
+    let rect = e.session.ws.canvas(NoteId(n)).unwrap().objects.keys().next().unwrap().0;
+    // …and six small tilted "letters".
+    let tilt = 20f64.to_radians();
+    let mut ids = vec![rect];
+    for k in 0..6 {
+        let samples: Vec<Value> = (0..12)
+            .map(|i| {
+                let (x, y) = (f64::from(k) * 60.0 + f64::from(i % 3) * 4.0, f64::from(i) * 2.0);
+                json!({"x": 500.0 + x * tilt.cos() - y * tilt.sin(), "y": 500.0 + x * tilt.sin() + y * tilt.cos(), "p": 0.5})
+            })
+            .collect();
+        ids.push(
+            e.execute("ink.stroke.add", json!({ "samples": samples })).unwrap()["id"]
+                .as_u64()
+                .unwrap(),
+        );
+    }
+    e.execute("selection.set", json!({ "ids": ids })).unwrap();
+    let steps = undo_len(&e);
+    e.execute("selection.tidy", json!({})).unwrap();
+    assert_eq!(undo_len(&e), steps + 1, "one undo step");
+    assert_eq!(shapes(&e, n).len(), 1);
+    assert_eq!(shapes(&e, n)[0].0, vibenote_model::ShapeKind::Rectangle);
+    assert_eq!(strokes(&e, n), 6, "the letters stay strokes");
+    assert_eq!(e.session.display_transforms(NoteId(n)).len(), 6, "and are straightened");
+    assert!(
+        !e.session.selection.ids.contains(&rect),
+        "the selection follows the shape"
+    );
+    assert_eq!(e.session.selection.ids.len(), 7);
+    e.execute("edit.undo", json!({})).unwrap();
+    assert_eq!((strokes(&e, n), shapes(&e, n).len()), (7, 0), "undo returns the ink");
+    assert!(e.session.display_transforms(NoteId(n)).is_empty());
+    // A single selected stroke is a drawing at any size: a short rough line snaps.
+    let l = e
+        .execute(
+            "ink.stroke.add",
+            json!({"samples": [{"x": 0.0, "y": 0.0, "p": 0.5}, {"x": 20.0, "y": 0.5, "p": 0.5}, {"x": 40.0, "y": 0.0, "p": 0.5}]}),
+        )
+        .unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    e.execute("selection.set", json!({ "ids": [l] })).unwrap();
+    e.execute("selection.tidy", json!({})).unwrap();
+    assert_eq!(shapes(&e, n).len(), 1);
+    assert_eq!(shapes(&e, n)[0].0, vibenote_model::ShapeKind::Line);
+}
