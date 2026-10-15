@@ -9,8 +9,8 @@
 ## Requirement
 R-HWR-004/005/006: the result stays the owner's handwriting, just more legible. Bounds: glyph
 displacement ≤ 0.35·x-height, stroke count/order unchanged, recognised text unchanged; owner
-gallery approval. Originals kept, undoable, per-block revert. Ships disabled or suggest-only
-until owner calibration (AGENTS.md).
+gallery approval. Originals kept, undoable, per-block revert. Mode setting off / suggest /
+automatic, default suggest (owner 2026-10-12: no calibration step required).
 
 ## Stage 1 prototype (deterministic geometry)
 Steps, each partial and clamped:
@@ -58,12 +58,13 @@ quotes/apostrophes were pulled onto the baseline (seen in the gallery).
 ## Decision
 1. **Stage 1 = rotate + baseline alignment only** (zero shape distortion, bounds trivially met),
    with slant as an opt-in strength slider. Size normalisation is **not** used, except
-   possibly later for clear outlier words after owner calibration.
+   possibly later for clear outlier words if the owner chooses to tune it.
 2. Prettify is a **display transform over the original strokes**, stored as per-block
    parameters (rotation, per-word offsets, shear): reversible exactly, never destructive
    (R-HWR-005).
-3. Ships **suggest-only** (preview, accept per block) until the owner calibration step; gated by
-   the two classifier gates of ADR 0007.
+3. Mode is a user setting (off / suggest / automatic), default **suggest** (preview, accept per
+   block). Always gated by the two classifier gates of ADR 0007. No calibration step is
+   required (owner 2026-10-12).
 4. Phase 3 harness: `cargo xtask prettify-gallery` produces a before/after HTML gallery for owner
    review; automated bounds become tests.
 

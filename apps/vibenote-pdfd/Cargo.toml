@@ -1,0 +1,21 @@
+[package]
+name = "vibenote-pdfd"
+description = "Sandboxed PDF worker process (pdfium), ADR 0004."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vibenote-pdf = { path = "../../crates/pdf" }
+pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_latest", "thread_safe"] }
+rustix = { version = "1", features = ["fs", "net", "process"] }
+seccompiler = "0.5"
+libc = "0.2"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

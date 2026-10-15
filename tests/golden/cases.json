@@ -1,0 +1,114 @@
+[
+ {
+  "name": "loops-4",
+  "fixture": "loops-4.jsonl",
+  "size": [
+   1200,
+   800
+  ],
+  "origin": [
+   0,
+   0
+  ],
+  "zoom": 1.0,
+  "reqs": [
+   "R-PEN-004"
+  ]
+ },
+ {
+  "name": "pressure-ramp-3",
+  "fixture": "pressure-ramp-3.jsonl",
+  "size": [
+   1200,
+   800
+  ],
+  "origin": [
+   0,
+   0
+  ],
+  "zoom": 1.0,
+  "reqs": [
+   "R-PEN-002"
+  ]
+ },
+ {
+  "name": "pressure-ramp-3-zoom3",
+  "fixture": "pressure-ramp-3.jsonl",
+  "size": [
+   1000,
+   400
+  ],
+  "origin": [
+   100,
+   60
+  ],
+  "zoom": 3.0,
+  "reqs": [
+   "R-PEN-002"
+  ]
+ },
+ {
+  "name": "tilt-sweep-2",
+  "fixture": "tilt-sweep-2.jsonl",
+  "size": [
+   1200,
+   800
+  ],
+  "origin": [
+   0,
+   0
+  ],
+  "zoom": 1.0,
+  "reqs": [
+   "R-PEN-003"
+  ]
+ },
+ {
+  "name": "scribble-5",
+  "fixture": "scribble-5.jsonl",
+  "size": [
+   1200,
+   800
+  ],
+  "origin": [
+   0,
+   0
+  ],
+  "zoom": 1.0,
+  "reqs": [
+   "R-PEN-004"
+  ]
+ },
+ {
+  "name": "scribble-5-zoom4",
+  "fixture": "scribble-5.jsonl",
+  "size": [
+   800,
+   600
+  ],
+  "origin": [
+   500,
+   300
+  ],
+  "zoom": 4.0,
+  "reqs": [
+   "R-CANVAS-002"
+  ]
+ },
+ {
+  "name": "fast-10-zoom0.5",
+  "fixture": "fast-10.jsonl",
+  "size": [
+   600,
+   400
+  ],
+  "origin": [
+   0,
+   0
+  ],
+  "zoom": 0.5,
+  "reqs": [
+   "R-CANVAS-002"
+  ]
+ }
+]

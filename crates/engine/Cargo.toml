@@ -1,0 +1,37 @@
+[package]
+name = "vibenote-engine"
+description = "Session, command registry, undo; drives everything without UI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vibenote-geom = { path = "../geom" }
+vibenote-model = { path = "../model" }
+vibenote-storage = { path = "../storage" }
+vibenote-ink = { path = "../ink" }
+vibenote-hwr = { path = "../hwr" }
+vibenote-pdf = { path = "../pdf" }
+vibenote-audio = { path = "../audio", default-features = false }
+rustix = { version = "1", features = ["time"] }
+vibenote-render = { path = "../render" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+schemars = "1"
+thiserror = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+resvg = { version = "0.48", default-features = false }
+
+[dev-dependencies]
+proptest = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+tempfile = "3"
+
+[features]
+# Audio capture and playback through PipeWire (ADR 0009).
+default = ["device"]
+device = ["vibenote-audio/device"]

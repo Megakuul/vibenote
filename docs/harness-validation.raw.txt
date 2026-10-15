@@ -1,0 +1,9 @@
+baseline | ci exit 0 | failed steps: none | no parity regression | protected changes: none | 385s
+drop-pressure | ci exit 1 | failed steps: tests,parity | REGRESSION: requirements in the floor no longer pass: ["R-PEN-002"] | protected changes: none | 57s
+break-undo | ci exit 1 | failed steps: tests | no parity regression | protected changes: none | 58s
+modify-ink-silently | ci exit 1 | failed steps: fmt,tests | no parity regression | protected changes: none | 58s
+corrupt-save | ci exit 1 | failed steps: tests | no parity regression | protected changes: none | 65s
+no-fsync | ci exit 1 | failed steps: tests | no parity regression | protected changes: none | 64s
+layer-violation | ci exit 1 | failed steps: layers,licences,parity | no parity regression | protected changes: none | 241s
+unwrap-in-product | ci exit 1 | failed steps: clippy,tests | no parity regression | protected changes: none | 362s
+loosen-budget | ci exit 1 | failed steps: protected | no parity regression | protected changes: changed  tests/budgets.toml | 389s

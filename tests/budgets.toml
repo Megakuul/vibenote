@@ -1,0 +1,50 @@
+# Performance budgets (SPEC §15, approved at Gate A 2026-10-11). PROTECTED after Gate C:
+# never loosen to make work pass (AGENTS.md §3). Units in the key names.
+# Regressions: parity floor (docs/parity.md) — once a budget test passes it must keep passing.
+
+[reference]           # R-PERF-000
+notes = 10000
+folders = 500
+note_strokes = 100000
+avg_samples = 80
+
+[latency]             # R-PERF-001 [sim], simtab emit → presented frame
+p50_ms = 10.0
+p95_ms = 13.0
+
+[frame]               # R-PERF-002, reference note, 180 Hz panel
+p99_ms = 5.5
+missed_per_1000 = 1
+
+[startup]             # R-PERF-003
+cold_start_ms = 400.0
+
+[open]                # R-PERF-004
+first_viewport_ms = 150.0
+full_note_ms = 500.0
+
+[search]              # R-PERF-005
+first_results_ms = 100.0
+complete_ms = 300.0
+
+[pdf]                 # R-PERF-006
+page_visible_ms = 100.0
+import_2000_pages_first_page_ms = 2000.0
+
+[memory]              # R-PERF-007
+reference_note_open_mb = 1500.0
+idle_mb = 200.0
+
+[quickopen]           # R-PERF-008, 100k notes
+per_keystroke_ms = 50.0
+
+[durability]          # R-PERF-009
+pen_up_to_durable_ms = 1000.0
+# "save never blocks inking": pen event handling while a save is in flight
+inking_while_saving_p99_ms = 1.0
+
+[hwr]                 # R-PERF-010
+block_searchable_ms = 3000.0
+
+[regression]
+tolerance = 0.10      # CI fails if a passing budget degrades by more than 10 %

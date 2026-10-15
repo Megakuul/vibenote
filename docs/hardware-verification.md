@@ -1,7 +1,12 @@
-# Hardware verification checklist
+# Hardware verification checklist (optional)
 
-Phase 0 ran entirely on a virtual tablet (simtab, `spikes/input/simtab`). Everything below must be
-re-done once a physical pen device exists. Results go into `docs/spikes/input-results.md` with the
+> **Optional, owner's choice, after implementation** (owner, 2026-10-12). No phase, gate,
+> milestone, task or test depends on anything in this file. Pen support is implemented best
+> effort on the virtual tablet. If the owner later tests with a real pen and something does not
+> work, the owner reports or fixes it after implementation.
+
+Phase 0 ran entirely on a virtual tablet (simtab, `spikes/input/simtab`). The items below can be
+done whenever a physical pen device is available. Results go into `docs/spikes/input-results.md` with the
 label **[hw]** next to the existing **[sim]** numbers. If a [hw] result contradicts a locked
 decision, write a change proposal (AGENTS.md §3 "Locked decisions"); do not switch silently.
 
@@ -50,7 +55,7 @@ Owner runs; the agent prepares scripts and analysis.
       small, in each viable variant. Owner records verdict: "feels like paper / acceptable / laggy".
 - [ ] Owner compares with any reference app they consider good (for feel only, not looks).
 
-## F. Handwriting calibration (later, Phase 2/3 — listed here so it is not forgotten)
+## F. Owner handwriting tuning (optional)
 - [ ] Record owner fixtures (fixture checklist in AGENTS.md §2 Phase 3 item 4).
 - [ ] Label writing vs. drawing; tune classifier thresholds; review prettify gallery.
 - [ ] Owner eval set becomes a protected test set.

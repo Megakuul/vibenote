@@ -1,0 +1,16 @@
+[package]
+name = "vibenote-pdf"
+description = "PDF worker protocol + client (ADR 0004); the pdfium worker is apps/vibenote-pdfd."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rustix = { version = "1", features = ["net", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

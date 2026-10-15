@@ -1,0 +1,18 @@
+{
+ "format": "vibenote-language-pack",
+ "version": 1,
+ "lang": "de+en",
+ "name": "German and English (PP-OCRv6 rec small, fine-tuned on GNHK train + fhswf)",
+ "model": "rec.onnx",
+ "dict": "dict.txt",
+ "lexicon": "lexicon.tsv",
+ "decoder": {
+  "alpha": 0.8,
+  "beta": 5.0,
+  "oov": -7.0,
+  "beam": 16
+ },
+ "pack_version": "ppocrv6-small-ft1+lex1",
+ "licence": "Apache-2.0 (PaddlePaddle / PP-OCR base weights, RapidOCR 3.10.0 ONNX), fine-tuned on GNHK train split (CC BY 4.0) and fhswf/german_handwriting (AFL-3.0); lexicon: Tatoeba CC BY 2.0 FR, SCOWL (permissive notice)",
+ "sha256": "ecd55fd7afee482cb08a627405f04e7c5271e4240d222630b556169b34b68784"
+}

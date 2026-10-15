@@ -1,0 +1,26 @@
+[package]
+name = "vibenote-render"
+description = "GPU renderer (ADR 0003): ink capsules, tiles, PDF/image layers, text boxes; headless PNG."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vibenote-geom = { path = "../geom" }
+vibenote-model = { path = "../model" }
+vibenote-ink = { path = "../ink" }
+glyphon = "0.12"
+# Vulkan only (ADR 0001/0003). Default features would add GLES/EGL, which pulls in
+# wayland-sys below the UI layer (caught by `cargo xtask layers`).
+wgpu = { version = "30", default-features = false, features = ["vulkan", "wgsl", "std", "parking_lot"] }
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+png = "0.18"
+thiserror = "2"
+
+[dev-dependencies]
+proptest = "1"

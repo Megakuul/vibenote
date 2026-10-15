@@ -1,0 +1,19 @@
+[package]
+name = "vibenote-model"
+description = "Document model: workspace, folders, notes, canvas objects, strokes."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vibenote-geom = { path = "../geom" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[dev-dependencies]
+proptest = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }

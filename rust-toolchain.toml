@@ -1,0 +1,4 @@
+[toolchain]
+# Pinned minimum; the Nix shell provides rustc 1.98.
+channel = "stable"
+components = ["rustfmt", "clippy"]

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c8efe7d3bb266c5b5625d119f4d35d93f20c88bc640b8d93a011ff4d2685a61e # shrinks to strokes = [(1900.0, 2078.309579533141, 2, 167.86147901616656, 0, 0, 0.5)], zoom = 2.5
+cc ea19cf35f103dccd29d80993666e345a16f44db118fdd1e29f71c039c0882006 # shrinks to strokes = [(1900.0, 2072.8345522852283, 25, 241.16693312457602, 0, 0, 11.32832), (1900.0, 1900.0, 2, 5.0, 0, 0, 0.5)], zoom = 4.0
+cc 153a5fc30db7767e72ed2fcb5f6b3eeb40e024ee15c6cd00fac3d027f721b02d # shrinks to strokes = [(1900.0, 2148.8158763403485, 4, 288.6651849159228, 0, 0, 9.8691025, 0.11100791), (1992.4314513330282, 2007.1901869548558, 19, 98.3988994275088, 0, 0, 0.5, 0.1)], zoom = 0.5

@@ -1,0 +1,20 @@
+[package]
+name = "vibenote-ink"
+description = "Stroke processing: smoothing, erasing, hit-testing, block segmentation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vibenote-geom = { path = "../geom" }
+vibenote-model = { path = "../model" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+thiserror = "2"
+
+[dev-dependencies]
+proptest = "1"

@@ -1,0 +1,31 @@
+[package]
+name = "vibenote-ui"
+description = "Thin UI: Wayland client (ADR 0001), egui chrome (ADR 0002)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vibenote-engine = { path = "../engine" }
+vibenote-render = { path = "../render" }
+vibenote-control = { path = "../control" }
+vibenote-geom = { path = "../geom" }
+vibenote-model = { path = "../model" }
+vibenote-ink = { path = "../ink" }
+# "system": libwayland-client backend, needed to hand wl_display/wl_surface to wgpu (ADR 0010).
+smithay-client-toolkit = { version = "0.21.1", features = ["system"] }
+# Same version sctk re-exports; "staging" adds wp_cursor_shape_v1 (system cursors per tool).
+wayland-protocols = { version = "0.32.13", features = ["client", "staging", "unstable"] }
+raw-window-handle = "0.6"
+rustix = { version = "1", features = ["time"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+thiserror = "2"
+# App chrome (ADR 0002): no default fonts (owner: own OFL fonts only).
+egui = { version = "0.36", default-features = false }
+egui-wgpu = { version = "0.36", default-features = false }
+
+[dev-dependencies]

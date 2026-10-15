@@ -7,7 +7,7 @@
 
 ## Requirement
 R-HWR-002: drawings, diagrams, arrows and sketches are **never** modified. Drawing false
-positives on the eval set = 0 (hard gate). Writing recall ≥ 60 % before calibration. Uncertain
+positives on the eval set = 0 (hard gate). Writing recall ≥ 60 % (best effort; no calibration required). Uncertain
 → unchanged.
 
 ## Data (owner licence decision 2026-10-11: shippable models train on permissive data only)
@@ -71,4 +71,4 @@ positives on the eval set = 0 (hard gate). Writing recall ≥ 60 % before calibr
   (spatio-temporal clustering, R-HWR-001) is not prototyped.
 - Writing training data is synthetic plus skeletons from images: no real stroke order or
   timing. Features were chosen to be order-invariant for that reason. Timing features (pauses,
-  stroke speed) are a likely improvement once owner/calibration data exists.
+  stroke speed) are a likely improvement if the owner later provides optional tuning data.

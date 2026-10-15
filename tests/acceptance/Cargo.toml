@@ -1,0 +1,21 @@
+[package]
+name = "vibenote-acceptance"
+description = "SPEC acceptance tests (one or more per requirement id). May be red; tracked by `cargo xtask parity`."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vibenote-engine = { path = "../../crates/engine" }
+vibenote-model = { path = "../../crates/model" }
+vibenote-storage = { path = "../../crates/storage" }
+vibenote-render = { path = "../../crates/render" }
+vibenote-ink = { path = "../../crates/ink" }
+vibenote-control = { path = "../../crates/control" }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+toml = "0.9"
+tempfile = "3"

@@ -1,6 +1,8 @@
 # ADR 0003 — Rendering at scale
 
-- **Status:** Accepted (locked) — Gate B (partial), 2026-10-11, owner approved.
+- **Status:** Accepted (locked) — Gate B (partial), 2026-10-11, owner approved. Decision 4's
+  coordinate format amended by ADR 0011 (owner, 2026-10-13). Decision 2 (tile cache) **deferred**
+  by the owner on 2026-10-13 ("Defer tiles"), see "Update 2026-10-13" at the end.
 - **Date:** 2026-10-11
 - **Builds on:** ADR 0001 (locked wgpu renderer), ADR 0002 (UI overlay).
 - **Evidence:** `spikes/render/` (`bench`: strategies A/B; `vbench`: vello). Headless,
@@ -87,3 +89,33 @@ GPU ms per frame, p50 / p95 / p99 (max); "over" = frames > 5.555 ms of 300.
 - Real frame time also includes egui (≤ 0.2 ms p99, ADR 0002) and present. Pen latency is
   unaffected because the canvas never blocks the input path (ADR 0001 rules).
 - PDF pages and images are separate textured layers (PDF ADR).
+
+## Update 2026-10-13 (M3.2): tile cache deferred
+
+Measured with the implemented renderer (ADR 0011 format, chunk culling, LOD L0/L3–L6 at ~1 px
+tolerance) on the full reference note (100k strokes, 8M samples; 109 MB on the GPU), headless
+1920×1200 **including readback**, debug test profile [sim]: zoom 1 1.3–2.1 ms, 0.5 1.6 ms,
+0.1 2.8 ms, overview 0.037 2.7 ms (budget 5.5 ms). Decision 2's tile cache was meant to close
+the overview gap of strategy A (8.1 ms at LOD bias 0); with LOD the gap is closed. Owner decision
+(2026-10-13, "Defer tiles"): **decision 2 is deferred**. Tiles are built only if a real scenario
+misses the budget (weaker GPU, PDFs/images on top, live measurements in the app). Decisions 1, 3
+(live ink never tiled) and 4 (as amended by ADR 0011) stand.
+
+## Update 2026-10-13 (later): deferral withdrawn, tile cache built (M3.3)
+
+The deferral above rested on one frame per zoom. A fuller test (`r_perf_002_settled_frames_
+reference_note`: whole note on the GPU, 20 panned frames at each of 7 zooms down to 1 %) showed
+p99 8.5 ms with direct drawing, because zoomed-out frames overdraw densely packed ink. Owner
+(2026-10-13, "Build tiles now"): decision 2 applies again. Implemented as decided (256 px tiles,
+power-of-two levels shown at scale 0.5–1, coarser cached tile as fallback plus an always-filled
+overview level, crossfade counted in frames, chunk versions invalidate tiles, live ink never
+tiled). Parameters set by measurement on this renderer [sim, debug harness incl. readback]:
+
+| Parameter | ADR | Now | Why |
+|---|---|---|---|
+| tile below zoom | 0.25 | **1.0** | direct frames at zoom 0.5 took 3–6 ms (341k instances) |
+| or visible instances above | 500k | **250k** | same |
+| fills per frame | 8–16 | **2**, and ≤ 100k instances | one zoomed-out fill costs ~1.3 ms (dense ink in 256 px) |
+
+Result: 10/10 runs of both R-PERF-002 tests pass (typical frames 1.1–3.5 ms); a new zoom level
+fills over more frames behind its coarser fallback. These deviations are reported to the owner.

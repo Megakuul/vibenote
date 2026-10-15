@@ -1,0 +1,89 @@
+{
+ "idle_ms": 1500,
+ "blocks": [
+  {
+   "label": "writing",
+   "strokes": [
+    0,
+    41
+   ]
+  },
+  {
+   "label": "writing",
+   "strokes": [
+    42,
+    113
+   ]
+  },
+  {
+   "label": "drawing",
+   "strokes": [
+    114,
+    114
+   ]
+  },
+  {
+   "label": "writing",
+   "strokes": [
+    115,
+    140
+   ]
+  },
+  {
+   "label": "writing",
+   "strokes": [
+    141,
+    151
+   ]
+  },
+  {
+   "label": "drawing",
+   "strokes": [
+    152,
+    154
+   ]
+  },
+  {
+   "label": "writing",
+   "strokes": [
+    155,
+    213
+   ]
+  },
+  {
+   "label": "writing",
+   "strokes": [
+    214,
+    231
+   ]
+  },
+  {
+   "label": "drawing",
+   "strokes": [
+    232,
+    234
+   ]
+  },
+  {
+   "label": "writing",
+   "strokes": [
+    235,
+    301
+   ]
+  },
+  {
+   "label": "writing",
+   "strokes": [
+    302,
+    439
+   ]
+  },
+  {
+   "label": "drawing",
+   "strokes": [
+    440,
+    440
+   ]
+  }
+ ]
+}

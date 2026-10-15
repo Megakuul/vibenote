@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c4353d6a3f4784930ca32d53a55d19ea29915879fcf34b3beb15a55fdf28e2c0 # shrinks to intents = [NewNote { folder: None, name: "" }, NewNote { folder: None, name: "" }, AddStroke { n: 0, pts: [(0.0, -2502609.4298922666, 0.0)] }]

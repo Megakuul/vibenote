@@ -1,0 +1,85 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/geom",
+    "crates/model",
+    "crates/storage",
+    "crates/ink",
+    "crates/hwr",
+    "crates/pdf",
+    "crates/audio",
+    "crates/render",
+    "crates/engine",
+    "crates/control",
+    "crates/ui",
+    "apps/vibenote",
+    "apps/vibenote-cli",
+    "apps/vibenote-pdfd",
+    "tools/simtab",
+    "tests/acceptance",
+    "xtask",
+]
+# Spikes are throwaway and have their own workspaces.
+exclude = ["spikes"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# AGENTS.md §3 "Never crash": no panicking constructs in non-test code.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "warn"
+# Lossy casts only (truncation, sign loss, wrap); lossless `as` (e.g. f32→f64) is fine.
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_possible_wrap = "warn"
+cast_precision_loss = "warn"
+exit = "deny"
+dbg_macro = "deny"
+print_stdout = "warn"
+mem_forget = "deny"
+
+[profile.release]
+debug = 1
+
+# Test binaries link wgpu, pdfium bindings, image decoders and fonts: with full debug info each
+# was ~320 MB and the ~40 of them overflowed the RAM-backed build dir. Line tables keep file:line
+# in our panics and backtraces; dependencies carry none.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+# The stroke codec decodes millions of samples when a note opens; unoptimised it is ~10× slower,
+# which would make debug builds (tests, parity) misjudge the open budget (R-PERF-004).
+[profile.dev.package.vibenote-storage]
+opt-level = 2
+
+# The renderer encodes and uploads ink inside a 5.5 ms frame (R-PERF-002, measured in the debug
+# test profile); unoptimised its loops are 2.5–3× slower (design-m3-rendering.md §0.2).
+[profile.dev.package.vibenote-render]
+opt-level = 2
+
+[profile.dev.package.vibenote-ink]
+opt-level = 2
+
+# The PDF worker and protocol move whole page bitmaps (millions of pixels per page).
+[profile.dev.package.vibenote-pdfd]
+opt-level = 2
+
+[profile.dev.package.vibenote-pdf]
+opt-level = 2

@@ -9,6 +9,7 @@ tool, not a document publisher. Locked stack decisions: `docs/adr/` (ADR 0001: d
 client, own tablet-v2 binding, wgpu renderer).
 
 Conventions
+- **No requirement depends on a physical pen** (owner 2026-10-12). Pen behaviour is implemented best effort and verified with simtab **[sim]**; real-pen issues are handled after implementation if the owner reports them.
 - Requirement ids `R-<AREA>-NNN`. Each has acceptance criteria (AC) that must be testable by the
   headless harness (Phase 3) unless marked **(manual)** or **(hw)**.
 - "Reference machine" = owner's machine (`docs/environment.md`): AMD Radeon 860M, 180 Hz panel,
@@ -248,8 +249,10 @@ handwriting, just more legible (baseline, slant, size, spacing, smoothing).
 revertible per block at any later time.
 - AC: prettify → revert → strokes byte-identical to original.
 
-**R-HWR-006 Control** The feature can be disabled; until owner calibration, auto-prettify ships
-**off / suggest-only** (AGENTS.md). Recognition for search may run on everything.
+**R-HWR-006 Control** Prettify mode is a setting: off / suggest / automatic, default **suggest**
+(safety default; no calibration step is required, owner 2026-10-12). Recognition for search may
+run on everything.
+- AC: each mode is a command; switching modes never modifies existing ink.
 
 **R-HWR-007 Languages** Language/model packs are pluggable; adding a language needs no code change
 outside the pack.
@@ -325,7 +328,7 @@ with 100k strokes (avg 80 samples), 3 PDFs (total 600 pages), 50 images, 200 tex
 
 | Id | Budget | Measured basis |
 |---|---|---|
-| R-PERF-001 | Input-to-ink software latency (simtab emit → presented frame) p50 ≤ 10 ms, p95 ≤ 13 ms on the reference machine **[sim]**, also while the reference note is open and while recognition runs. [hw] total budget set after hardware verification. | Phase 0: 9.18 / 11.64 ms (empty canvas) |
+| R-PERF-001 | Input-to-ink software latency (simtab emit → presented frame) p50 ≤ 10 ms, p95 ≤ 13 ms on the reference machine **[sim]**, also while the reference note is open and while recognition runs. Real-pen [hw] measurement is optional and owner-initiated (no requirement depends on it). | Phase 0: 9.18 / 11.64 ms (empty canvas) |
 | R-PERF-002 | Frame time while inking, panning and zooming the reference note: p99 ≤ 5.5 ms (180 Hz), no more than 1 missed frame per 1,000 | display refresh 5.555 ms |
 | R-PERF-003 | Cold start to first interactive frame ≤ 400 ms (warm disk cache) | — |
 | R-PERF-004 | Open the reference note: first viewport fully drawn ≤ 150 ms; full note interactive ≤ 500 ms | — |
@@ -342,10 +345,10 @@ CI fails on regressions beyond tolerance (10 % [proposal]) against these budgets
 
 ## 16. Handwriting quality targets — **[proposal]**
 
-| Metric | Target (public + synthetic eval set; owner set after calibration) |
+| Metric | Target (public + synthetic eval set; an owner set is optional and may be added later) |
 |---|---|
 | Drawing blocks modified (false positives) | **0** — hard gate, any > 0 fails CI |
-| Writing recall at that threshold | ≥ 60 % before calibration; target ≥ 85 % after owner calibration |
+| Writing recall at that threshold | ≥ 60 % (best effort; optional owner tuning may raise it later) |
 | Recognition CER (en / de) | ≤ 10 % / ≤ 12 % |
 | Recognition WER for search usefulness (en / de) | ≤ 25 % / ≤ 30 % |
 | Prettify bounds | glyph displacement ≤ 0.35 × x-height; stroke count/order unchanged; recognised text unchanged |

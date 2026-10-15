@@ -3,7 +3,7 @@
 - **Status:** Accepted (locked) — Gate 0, 2026-10-11, owner: "okay take the recommended raw wayland approach"
 - **Date:** 2026-10-11
 - **Evidence:** `docs/spikes/input-results.md` (all measurements **[sim]**, virtual tablet on the
-  owner's machine: Hyprland 0.56.2, AMD 860M/RADV, 180 Hz panel). [hw] pending:
+  owner's machine: Hyprland 0.56.2, AMD 860M/RADV, 180 Hz panel). Real-pen [hw] checks are optional:
   `docs/hardware-verification.md`.
 
 ## Context
@@ -51,8 +51,9 @@ Binding rules for the latency path, all backed by the measurements:
    cost 30–94 ms.
 3. Drain all queued input before each draw (coalescing; 1 kHz input causes no backlog).
 4. Use `wp_presentation` feedback as the latency instrument in the product and in benchmarks.
-5. Ink prediction is a tunable display-only overlay (default horizon to be set after the [hw]
-   feel test; 4–8 ms measured). Predicted ink is never stored.
+5. Ink prediction is a tunable display-only overlay. The default horizon is chosen best effort
+   from the [sim] measurements (4–8 ms measured); the owner may tune it later. Predicted ink is
+   never stored.
 6. Keep partial redraw (damage-limited updates) as an option for the live-stroke layer; it is
    worth ~0.3–0.4 ms here. The main renderer stays GPU (Phase 2 "rendering at scale" decides
    tiling/caching).
@@ -81,7 +82,7 @@ is a Phase 2 question.
   (≈ 1.5 refresh periods). Further gains need compositor-side changes (out of our control) or
   prediction.
 
-## Open, pending [hw]
+## Not covered by [sim] (optional real-pen checks; owner 2026-10-12: not required)
 - Device latency, libinput smoothing (active only on real pens), pressure curve and 5 % tip
   threshold, jitter, pen-display vs. screenless mapping, owner feel test (including prediction
   overshoot). If [hw] contradicts this decision, write a change proposal (AGENTS.md §3).
