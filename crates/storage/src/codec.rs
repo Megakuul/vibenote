@@ -44,6 +44,7 @@ pub fn encode_stroke(s: &Stroke) -> Result<Vec<u8>, StorageError> {
     out.push(match s.tool {
         Tool::Pen => 0,
         Tool::Highlighter => 1,
+        Tool::Cover => 2,
     });
     out.extend_from_slice(&s.color.0.to_le_bytes());
     out.extend_from_slice(&s.width.to_bits().to_le_bytes());
@@ -143,6 +144,7 @@ pub fn decode_stroke(b: &[u8]) -> Result<Stroke, StorageError> {
     let tool = match r.byte()? {
         0 => Tool::Pen,
         1 => Tool::Highlighter,
+        2 => Tool::Cover,
         t => return Err(StorageError::Corrupt(format!("tool {t}"))),
     };
     let color = Color(u32::from_le_bytes(r.bytes::<4>()?));

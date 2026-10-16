@@ -33,6 +33,10 @@ pub enum Action {
     Find(String),
     /// Paste what the clipboard holds (files, images, text, or our own objects).
     Paste,
+    /// Ask the finder for results (they come back with [`Chrome::set_finder_results`]).
+    FinderQuery { kind: &'static str, query: String },
+    /// Open a finder result (`finder.open`).
+    FinderOpen(Value),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -82,6 +86,25 @@ struct State {
     row_rects: Vec<(String, egui::Rect)>,
     focus_search: bool,
     focus_find: bool,
+    /// The finder overlay (R-VIM-005), while open.
+    finder: Option<Finder>,
+    /// A notice shown until the instant (errors of actions).
+    notice: Option<(String, std::time::Instant)>,
+    /// Colour swatches laid out last run (logical px; tests).
+    swatches: Vec<(u32, egui::Rect)>,
+}
+
+/// The telescope-like finder: a prompt, ranked results and a preview; keyboard only.
+struct Finder {
+    /// "text" (Space f w) or "notes" (Space f f, Ctrl+P).
+    kind: &'static str,
+    query: String,
+    /// The query the results were asked for.
+    asked: String,
+    results: Vec<Value>,
+    sel: usize,
+    /// The selection moved by key: scroll it into view.
+    moved: bool,
 }
 
 /// Canvas-to-screen mapping of the view the chrome was laid out for (find highlights).
@@ -213,6 +236,24 @@ impl Chrome {
     }
 
     /// How long the event loop may sleep before egui wants to run again.
+    /// The colour swatches on the toolbar and where they are (logical px).
+    pub fn swatch_rects(&self) -> &[(u32, egui::Rect)] {
+        &self.st.swatches
+    }
+
+    /// The notice shown, if any.
+    pub fn notice(&self) -> Option<&str> {
+        self.st.notice.as_ref().map(|(m, _)| m.as_str())
+    }
+
+    /// Shows `msg` to the user for a few seconds (an action failed, R-AUDIO-004).
+    pub fn notify(&mut self, msg: String) {
+        let now = std::time::Instant::now();
+        let until = now.checked_add(std::time::Duration::from_secs(6)).unwrap_or(now);
+        self.st.notice = Some((msg, until));
+        self.dirty = true;
+    }
+
     pub fn wake_in(&self) -> Option<std::time::Duration> {
         self.repaint_at
             .map(|t| t.saturating_duration_since(std::time::Instant::now()))
@@ -226,6 +267,11 @@ impl Chrome {
             return true;
         }
         false
+    }
+
+    /// egui asked to run again right away (a new area's sizing pass, an animation step).
+    pub fn wants_frame(&self) -> bool {
+        self.dirty
     }
 
     /// True if egui must run before the next frame.
@@ -296,6 +342,18 @@ impl Chrome {
         rebuild_rows(&mut self.st, eng);
         let out = ctx.run_ui(raw, |root| {
             build(&mut self.st, eng, view, root, &mut actions, &mut areas)
+        });
+        // Popups (context menus, submenus, pickers) are chrome too: without them the pointer
+        // leaving a panel for its menu went to the canvas and egui closed the menu.
+        // Tooltips are left out (they must not block the canvas under them).
+        ctx.memory(|m| {
+            for l in m.areas().visible_layer_ids() {
+                if !matches!(l.order, egui::Order::Background | egui::Order::Tooltip)
+                    && let Some(r) = m.area_rect(l.id)
+                {
+                    areas.push(r);
+                }
+            }
         });
         self.areas = areas;
         self.cursor = out.platform_output.cursor_icon;
@@ -462,24 +520,35 @@ fn rebuild_rows(st: &mut State, eng: &Engine) {
     st.rows = rows;
 }
 
-/// Tool buttons: icon, tooltip (with the key), command, and whether it is the selected tool.
-/// The eraser button switches between stroke and area eraser when pressed again
-/// (`tool.select.eraser`).
-fn tool_buttons(t: vibenote_model::settings::ToolKind) -> [(&'static str, &'static str, &'static str, bool); 6] {
+/// Tool buttons: icon, tooltip, key (the engine keymap's binding, shown on the button),
+/// command, and whether it is the selected tool. The eraser button switches between stroke and
+/// area eraser when pressed again (`tool.select.eraser`).
+fn tool_buttons(
+    t: vibenote_model::settings::ToolKind,
+) -> [(&'static str, &'static str, &'static str, &'static str, bool); 7] {
     use theme::icon;
     use vibenote_model::settings::ToolKind as T;
     [
         (
             icon::PEN,
             "Pen (P) — hold still at the end of a stroke to snap it into a shape",
+            "P",
             "tool.select.pen",
             t == T::Pen,
         ),
         (
             icon::HIGHLIGHTER,
             "Highlighter (H)",
+            "H",
             "tool.select.highlighter",
             t == T::Highlighter,
+        ),
+        (
+            icon::COVER,
+            "Cover (M): hide what is underneath; tap a cover to reveal it, again to hide (flashcards)",
+            "M",
+            "tool.select.cover",
+            t == T::Cover,
         ),
         (
             icon::ERASER,
@@ -488,18 +557,94 @@ fn tool_buttons(t: vibenote_model::settings::ToolKind) -> [(&'static str, &'stat
             } else {
                 "Stroke eraser (E) — press again for the area eraser"
             },
+            "E",
             "tool.select.eraser",
             matches!(t, T::EraserStroke | T::EraserArea),
         ),
         (
             icon::LASSO,
-            "Lasso: select, then drag to move (L)",
+            "Lasso (L): select, then drag to move",
+            "L",
             "tool.select.lasso",
             t == T::Lasso,
         ),
-        (icon::SHAPES, "Shapes", "tool.select.shape", t == T::Shape),
-        (icon::TEXT, "Text: tap to write", "tool.select.text", t == T::Text),
+        (icon::SHAPES, "Shapes (S)", "S", "tool.select.shape", t == T::Shape),
+        (
+            icon::TEXT,
+            "Text (T): click into a box to type there; drag selects, double-click a word, triple-click a line; drag the frame to move",
+            "T",
+            "tool.select.text",
+            t == T::Text,
+        ),
     ]
+}
+
+/// Pen and text colours (R-PEN-013, R-TEXT-006), 0xRRGGBBAA: ink, blue, red, green, orange,
+/// purple, grey, teal.
+const PEN_COLORS: [u32; 8] = [
+    0x1e17_14ff,
+    0x1f5f_bfff,
+    0xc628_28ff,
+    0x2e7d_32ff,
+    0xe079_1aff,
+    0x6a3f_b5ff,
+    0x6b6f_78ff,
+    0x0083_8fff,
+];
+/// Highlighter colours (drawn translucent): yellow, green, pink, blue, orange, lilac.
+const HIGHLIGHTER_COLORS: [u32; 6] = [
+    0xf5c8_00ff,
+    0x7ed9_57ff,
+    0xff7e_b6ff,
+    0x6ec6_ffff,
+    0xffa6_4dff,
+    0xc39b_ffff,
+];
+
+fn color32(c: u32) -> egui::Color32 {
+    let [r, g, b, _] = c.to_be_bytes();
+    egui::Color32::from_rgb(r, g, b)
+}
+
+/// A colour swatch on the toolbar; `on` draws a ring around it.
+fn swatch(ui: &mut egui::Ui, c: u32, on: bool, tip: &str) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(20.0, 32.0), egui::Sense::click());
+    let p = ui.painter();
+    let centre = r.center();
+    if on {
+        p.circle_stroke(centre, 9.0, egui::Stroke::new(2.0, theme::ACCENT));
+    } else if resp.hovered() {
+        p.circle_stroke(centre, 9.0, egui::Stroke::new(1.0, theme::MUTED));
+    }
+    p.circle_filled(centre, 6.5, color32(c));
+    resp.on_hover_text(tip)
+}
+
+/// A palette of swatches plus a custom colour picker; returns the colour chosen this frame.
+fn palette(
+    ui: &mut egui::Ui,
+    colors: &[u32],
+    current: Option<u32>,
+    what: &str,
+    rects: &mut Vec<(u32, egui::Rect)>,
+) -> Option<u32> {
+    let mut chosen = None;
+    for &c in colors {
+        let r = swatch(ui, c, current.is_some_and(|k| k | 0xff == c | 0xff), what);
+        rects.push((c, r.rect));
+        if r.clicked() {
+            chosen = Some(c);
+        }
+    }
+    let mut c = color32(current.unwrap_or(0x8080_80ff));
+    let r =
+        egui::widgets::color_picker::color_edit_button_srgba(ui, &mut c, egui::widgets::color_picker::Alpha::Opaque)
+            .on_hover_text(format!("Custom {what}"));
+    if r.changed() {
+        let [rr, gg, bb, _] = c.to_array();
+        chosen = Some(u32::from_be_bytes([rr, gg, bb, 0xff]));
+    }
+    chosen
 }
 
 /// What the shape tool draws: icon, tooltip, `settings.set` value.
@@ -573,6 +718,7 @@ fn build(
 ) {
     let ctx = root.ctx().clone();
     let s = &eng.session;
+    st.swatches.clear();
     let top = egui::Panel::top("toolbar")
         .exact_size(TOP_H)
         .frame(
@@ -588,12 +734,36 @@ fn build(
                     st.sidebar = !st.sidebar;
                 }
                 divider(ui);
-                for (icon, tip, cmd, on) in tool_buttons(s.settings.tool) {
-                    if icon_button(ui, icon, on, tip).clicked() {
+                for (icon, tip, key, cmd, on) in tool_buttons(s.settings.tool) {
+                    let r = icon_button(ui, icon, on, tip);
+                    // The shortcut in the button's corner, so the keys are discoverable.
+                    ui.painter().text(
+                        egui::pos2(r.rect.right() - 3.0, r.rect.bottom() - 1.0),
+                        egui::Align2::RIGHT_BOTTOM,
+                        key,
+                        egui::FontId::proportional(8.5),
+                        theme::MUTED,
+                    );
+                    if r.clicked() {
                         out.push(Action::Cmd(cmd, json!({})));
                     }
                 }
-                // What the selected tool can do: shapes to draw, formats while typing.
+                // What the selected tool can do: colours to ink with, shapes to draw, formats
+                // while typing.
+                // (While typing the text palette shows instead.)
+                if s.settings.tool == vibenote_model::settings::ToolKind::Pen && s.text_edit.is_none() {
+                    divider(ui);
+                    if let Some(c) = palette(ui, &PEN_COLORS, Some(s.settings.pen_color.0), "pen colour", &mut st.swatches) {
+                        out.push(Action::Cmd("settings.set", json!({ "pen_color": c })));
+                    }
+                }
+                if s.settings.tool == vibenote_model::settings::ToolKind::Highlighter && s.text_edit.is_none() {
+                    divider(ui);
+                    let cur = Some(s.settings.highlighter_color.0);
+                    if let Some(c) = palette(ui, &HIGHLIGHTER_COLORS, cur, "highlighter colour", &mut st.swatches) {
+                        out.push(Action::Cmd("settings.set", json!({ "highlighter_color": c })));
+                    }
+                }
                 if s.settings.tool == vibenote_model::settings::ToolKind::Shape {
                     divider(ui);
                     for (icon, tip, value, kind) in SHAPES {
@@ -613,12 +783,57 @@ fn build(
                 {
                     out.push(Action::Paste);
                 }
+                if icon_button(
+                    ui,
+                    theme::icon::RULER,
+                    s.ruler.visible,
+                    "Ruler (R): lines drawn along its edge come out straight; drag it to move, its knob or the wheel to rotate, Alt+Left/Right turn by 15°",
+                )
+                .clicked()
+                {
+                    out.push(Action::Cmd("ruler.toggle", ruler_here(s, view, ctx.content_rect())));
+                }
+                // Vim mode (R-VIM-001): a text toggle, highlighted while on.
+                let vim = s.settings.vim;
+                let label = egui::RichText::new("VIM")
+                    .monospace()
+                    .size(12.0)
+                    .strong()
+                    .color(if vim { theme::ACCENT } else { theme::MUTED });
+                if ui
+                    .add(egui::Button::selectable(vim, label).min_size(egui::vec2(40.0, 32.0)))
+                    .on_hover_text(
+                        "Vim mode: text boxes edit with vim keys (jk = Esc) in a monospace font; Space f w finds text, Space f f finds notes",
+                    )
+                    .clicked()
+                {
+                    out.push(Action::Cmd("settings.set", json!({ "vim": !vim })));
+                }
                 if s.text_edit.is_some() {
                     divider(ui);
                     for (icon, tip, format) in TEXT_STYLES {
                         if icon_button(ui, icon, false, tip).clicked() {
                             out.push(Action::Cmd("text.style", json!({ "format": format })));
                         }
+                    }
+                    // Text colour (R-TEXT-006): a palette button with the swatches in a popup.
+                    let icon = egui::RichText::new(theme::icon::PALETTE).size(theme::ICON).color(theme::TEXT);
+                    let menu = ui
+                        .menu_button(icon, |ui| {
+                            ui.horizontal(|ui| {
+                                palette(
+                                    ui,
+                                    PEN_COLORS.get(1..).unwrap_or(&[]),
+                                    None,
+                                    "text colour (the selection, or the whole box)",
+                                    &mut st.swatches,
+                                )
+                            })
+                            .inner
+                        });
+                    st.swatches.push((0, menu.response.rect));
+                    if let Some(Some(c)) = menu.inner {
+                        out.push(Action::Cmd("text.style", json!({ "format": "color", "value": c })));
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -634,7 +849,7 @@ fn build(
                     let (icon, tip) = if recording {
                         (theme::icon::STOP, "Stop recording")
                     } else {
-                        (theme::icon::MIC, "Record audio (synced to ink)")
+                        (theme::icon::MIC, "Record a voice note (synced to ink)")
                     };
                     if icon_button(ui, icon, recording, tip).clicked() {
                         out.push(if recording {
@@ -642,6 +857,14 @@ fn build(
                         } else {
                             Action::Cmd("audio.record.start", json!({"source": "device"}))
                         });
+                    }
+                    // The elapsed time while recording (R-AUDIO-004).
+                    if let Some(secs) = recording_secs(s) {
+                        ui.label(
+                            egui::RichText::new(format!("● {}:{:02}", secs / 60, secs % 60))
+                                .color(egui::Color32::from_rgb(0xc6, 0x28, 0x28))
+                                .monospace(),
+                        );
                     }
                     divider(ui);
                     if icon_button(ui, theme::icon::FIT, false, "Fit to content (Ctrl+0)").clicked() {
@@ -671,6 +894,12 @@ fn build(
             });
         });
     areas.push(top.response.rect);
+    vim_status(s, st, &ctx);
+    ruler_label(s, view, &ctx);
+    notice(st, &ctx, areas);
+    if st.finder.is_some() {
+        finder(st, &ctx, out, areas);
+    }
     if st.sidebar {
         let side = egui::Panel::left("tree")
             .exact_size(SIDE_W)
@@ -1199,6 +1428,17 @@ fn settings(eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) {
         }
     });
     ui.separator();
+    let mut vim = st.vim;
+    if ui
+        .checkbox(&mut vim, "Vim mode for text boxes")
+        .on_hover_text(
+            "Normal/Insert/Visual modes, jk leaves Insert, monospace text; Space f w finds text, Space f f finds notes",
+        )
+        .changed()
+    {
+        out.push(Action::Cmd("settings.set", json!({ "vim": vim })));
+    }
+    ui.separator();
     ui.label("Shapes from ink");
     let mut lift = st.snap_on_lift;
     if ui
@@ -1243,7 +1483,339 @@ fn settings(eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) {
     });
 }
 
+/// Shows the ruler at the middle of the visible canvas (a toggle that hides it keeps it put).
+fn ruler_here(s: &vibenote_engine::Session, view: ViewMap, screen: egui::Rect) -> Value {
+    if s.ruler.visible {
+        return json!({ "visible": false });
+    }
+    // The canvas point at the middle of the window, a little above it.
+    let (cx, cy) = (f64::from(screen.center().x), f64::from(screen.center().y) - 40.0);
+    let at = [view.origin_x + cx / view.scale, view.origin_y + cy / view.scale];
+    json!({ "visible": true, "at": at })
+}
+
+/// Seconds since the recording in progress started.
+fn recording_secs(s: &vibenote_engine::Session) -> Option<u64> {
+    let start = s.audio.recording_start_us()?;
+    Some(vibenote_engine::audio::now_us().saturating_sub(start) / 1_000_000)
+}
+
+/// The ruler's angle next to its pivot (R-RULER-001).
+fn ruler_label(s: &vibenote_engine::Session, view: ViewMap, ctx: &egui::Context) {
+    let r = s.ruler;
+    if !r.visible {
+        return;
+    }
+    #[allow(clippy::cast_possible_truncation)] // screen position
+    let pos = egui::pos2(
+        ((r.x - view.origin_x) * view.scale) as f32,
+        ((r.y - view.origin_y) * view.scale) as f32 + 30.0,
+    );
+    // A tooltip-order painter: not a chrome area, so the pen still reaches the ruler there.
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("ruler_label")));
+    let a = r.angle_deg.rem_euclid(360.0);
+    let shown = if a > 180.0 { a - 360.0 } else { a };
+    painter.text(
+        pos,
+        egui::Align2::CENTER_CENTER,
+        format!("{shown:.0}°"),
+        egui::FontId::proportional(13.0),
+        egui::Color32::from_rgb(0x34, 0x5a, 0x8f),
+    );
+}
+
+/// A notice for the user at the bottom (errors of actions, R-AUDIO-004), for a few seconds.
+fn notice(st: &mut State, ctx: &egui::Context, areas: &mut Vec<egui::Rect>) {
+    let Some((msg, until)) = st.notice.clone() else { return };
+    let now = std::time::Instant::now();
+    if now >= until {
+        st.notice = None;
+        return;
+    }
+    ctx.request_repaint_after(until.saturating_duration_since(now));
+    let r = egui::Area::new(egui::Id::new("notice"))
+        .fade_in(false)
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -24.0))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgb(0x3a, 0x2a, 0x2a))
+                .corner_radius(6.0)
+                .inner_margin(egui::Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new(msg).color(egui::Color32::WHITE));
+                });
+        });
+    areas.push(r.response.rect);
+}
+
+/// The vim mode of the box being edited, bottom left over the canvas ("-- NORMAL --" and the
+/// keys of an unfinished command).
+/// It is not chrome: the canvas under it still takes the pen (a tooltip-order layer, which the
+/// hit areas leave out).
+fn vim_status(s: &vibenote_engine::Session, st: &State, ctx: &egui::Context) {
+    let Some(v) = s.text_edit.as_ref().and_then(|e| serde_json::to_value(e).ok()) else {
+        return;
+    };
+    let vim = v.get("vim");
+    let Some(mode) = vim.and_then(|x| x.get("mode")).and_then(Value::as_str) else {
+        return;
+    };
+    let label = match mode {
+        "insert" => "-- INSERT --",
+        "visual" => "-- VISUAL --",
+        "visual_line" => "-- VISUAL LINE --",
+        _ => "-- NORMAL --",
+    };
+    let pending = vim.and_then(|x| x.get("pending")).and_then(Value::as_str).unwrap_or("");
+    let screen = ctx.content_rect();
+    let left = if st.sidebar { SIDE_W + 12.0 } else { 12.0 };
+    egui::Area::new(egui::Id::new("vim-status"))
+        .order(egui::Order::Tooltip)
+        .fade_in(false)
+        .interactable(false)
+        .fixed_pos(egui::pos2(screen.left() + left, screen.bottom() - 36.0))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(theme::PANEL)
+                .stroke(egui::Stroke::new(1.0, theme::PANEL_EDGE))
+                .corner_radius(6.0)
+                .inner_margin(egui::Margin::symmetric(10, 4))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let color = if mode == "insert" { theme::ACCENT } else { theme::TEXT };
+                        ui.label(egui::RichText::new(label).monospace().strong().color(color));
+                        if !pending.is_empty() {
+                            ui.label(egui::RichText::new(pending).monospace().color(theme::MUTED));
+                        }
+                    });
+                });
+        });
+}
+
+/// The finder overlay (R-VIM-005): prompt, results and preview in the centre. Up/Down,
+/// Ctrl+N/P and Ctrl+J/K move, Enter opens, Esc closes; the prompt keeps the keyboard.
+fn finder(st: &mut State, ctx: &egui::Context, out: &mut Vec<Action>, areas: &mut Vec<egui::Rect>) {
+    let Some(f) = st.finder.as_mut() else { return };
+    let (mut down, mut up, mut enter, mut esc) = (false, false, false, false);
+    ctx.input_mut(|i| {
+        use egui::{Key, Modifiers as M};
+        down = i.consume_key(M::NONE, Key::ArrowDown) | i.consume_key(M::CTRL, Key::N) | i.consume_key(M::CTRL, Key::J);
+        up = i.consume_key(M::NONE, Key::ArrowUp) | i.consume_key(M::CTRL, Key::P) | i.consume_key(M::CTRL, Key::K);
+        enter = i.consume_key(M::NONE, Key::Enter);
+        esc = i.consume_key(M::NONE, Key::Escape);
+    });
+    let n = f.results.len();
+    if down && n > 0 {
+        f.sel = f.sel.saturating_add(1).min(n.saturating_sub(1));
+        f.moved = true;
+    }
+    if up {
+        f.sel = f.sel.saturating_sub(1);
+        f.moved = true;
+    }
+    if esc {
+        st.finder = None;
+        return;
+    }
+    if enter {
+        if let Some(r) = f.results.get(f.sel) {
+            out.push(Action::FinderOpen(r.clone()));
+        }
+        st.finder = None;
+        return;
+    }
+    let screen = ctx.content_rect();
+    let size = egui::vec2((screen.width() * 0.85).min(900.0), (screen.height() * 0.7).min(480.0));
+    let rect = egui::Rect::from_center_size(screen.center(), size);
+    let title = if f.kind == "text" { "Find text" } else { "Find note" };
+    let mut open: Option<usize> = None;
+    let a = egui::Area::new(egui::Id::new("finder"))
+        .order(egui::Order::Foreground)
+        .fade_in(false)
+        .fixed_pos(rect.min)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(theme::PANEL)
+                .stroke(egui::Stroke::new(1.0, theme::PANEL_EDGE))
+                .corner_radius(10.0)
+                .shadow(egui::Shadow {
+                    offset: [0, 4],
+                    blur: 24,
+                    spread: 0,
+                    color: egui::Color32::from_black_alpha(60),
+                })
+                .inner_margin(egui::Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_width(size.x - 24.0);
+                    ui.set_height(size.y - 24.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(title).strong());
+                        ui.label(
+                            egui::RichText::new("↑↓ / Ctrl+N P J K move · Enter open · Esc close")
+                                .size(11.0)
+                                .color(theme::MUTED),
+                        );
+                    });
+                    let r = ui.add(
+                        egui::TextEdit::singleline(&mut f.query)
+                            .hint_text(if f.kind == "text" {
+                                "Text or handwriting…"
+                            } else {
+                                "Note name…"
+                            })
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace),
+                    );
+                    if !r.has_focus() {
+                        r.request_focus();
+                    }
+                    if f.query != f.asked {
+                        f.asked = f.query.clone();
+                        f.sel = 0;
+                        out.push(Action::FinderQuery {
+                            kind: f.kind,
+                            query: f.query.clone(),
+                        });
+                    }
+                    ui.add_space(6.0);
+                    let list_w = (size.x - 24.0) * 0.5;
+                    ui.horizontal_top(|ui| {
+                        let col = egui::Layout::top_down(egui::Align::Min);
+                        ui.allocate_ui_with_layout(egui::vec2(list_w, size.y - 90.0), col, |ui| {
+                            egui::ScrollArea::vertical()
+                                .id_salt("finder-results")
+                                .auto_shrink(false)
+                                .show(ui, |ui| {
+                                    if f.results.is_empty() {
+                                        ui.label(egui::RichText::new("No matches").color(theme::MUTED));
+                                    }
+                                    for (i, r) in f.results.iter().enumerate() {
+                                        let main = r["line"].as_str().or_else(|| r["name"].as_str()).unwrap_or("");
+                                        let mut where_ = r["path"].as_str().unwrap_or("").to_string();
+                                        if f.kind == "text" {
+                                            let name = r["name"].as_str().unwrap_or("");
+                                            where_ = if where_.is_empty() {
+                                                name.to_string()
+                                            } else {
+                                                format!("{where_}/{name}")
+                                            };
+                                        }
+                                        let mut job = egui::text::LayoutJob::default();
+                                        job.append(
+                                            main,
+                                            0.0,
+                                            egui::TextFormat {
+                                                font_id: egui::FontId::monospace(13.0),
+                                                color: if i == f.sel { theme::ACCENT } else { theme::TEXT },
+                                                ..Default::default()
+                                            },
+                                        );
+                                        if !where_.is_empty() {
+                                            job.append(
+                                                &format!("   {where_}"),
+                                                0.0,
+                                                egui::TextFormat {
+                                                    font_id: egui::FontId::proportional(11.5),
+                                                    color: theme::MUTED,
+                                                    ..Default::default()
+                                                },
+                                            );
+                                        }
+                                        job.wrap.max_rows = 1;
+                                        job.wrap.max_width = list_w - 12.0;
+                                        // A left-aligned row (a button would centre its text).
+                                        let (rect, resp) = ui
+                                            .allocate_exact_size(egui::vec2(list_w - 12.0, 24.0), egui::Sense::click());
+                                        if i == f.sel {
+                                            ui.painter().rect_filled(rect, 5.0, theme::SELECTED);
+                                        } else if resp.hovered() {
+                                            ui.painter().rect_filled(rect, 5.0, theme::HOVER);
+                                        }
+                                        let galley = ui.fonts_mut(|fo| fo.layout_job(job));
+                                        let y = rect.center().y - galley.size().y / 2.0;
+                                        ui.painter().with_clip_rect(rect).galley(
+                                            egui::pos2(rect.left() + 8.0, y),
+                                            galley,
+                                            theme::TEXT,
+                                        );
+                                        if i == f.sel && f.moved {
+                                            resp.scroll_to_me(None);
+                                        }
+                                        if resp.clicked() {
+                                            open = Some(i);
+                                        }
+                                    }
+                                });
+                        });
+                        ui.separator();
+                        // Preview of the selected result.
+                        let rest = egui::vec2(ui.available_width(), size.y - 90.0);
+                        ui.allocate_ui_with_layout(rest, col, |ui| {
+                            let Some(r) = f.results.get(f.sel) else { return };
+                            let name = r["name"].as_str().unwrap_or("");
+                            let path = r["path"].as_str().unwrap_or("");
+                            let head = if path.is_empty() {
+                                name.to_string()
+                            } else {
+                                format!("{path}/{name}")
+                            };
+                            ui.label(egui::RichText::new(head).strong());
+                            ui.add_space(4.0);
+                            let line = r["line"].as_str();
+                            for l in r["preview"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                                let hit = line == Some(l);
+                                ui.label(
+                                    egui::RichText::new(if l.is_empty() { " " } else { l })
+                                        .monospace()
+                                        .size(12.5)
+                                        .color(if hit { theme::ACCENT } else { theme::TEXT }),
+                                );
+                            }
+                        });
+                    });
+                });
+        });
+    f.moved = false;
+    areas.push(a.response.rect);
+    if let Some(i) = open {
+        if let Some(r) = f.results.get(i) {
+            out.push(Action::FinderOpen(r.clone()));
+        }
+        st.finder = None;
+    }
+}
+
 impl Chrome {
+    /// Opens the finder (`kind` "text" or "notes") with an empty prompt (R-VIM-005).
+    pub fn open_finder(&mut self, kind: &str) {
+        self.st.finder = Some(Finder {
+            kind: if kind == "text" { "text" } else { "notes" },
+            query: String::new(),
+            asked: String::new(),
+            results: Vec::new(),
+            sel: 0,
+            moved: false,
+        });
+        self.dirty = true;
+    }
+
+    /// Results of `finder.query` for `query` (older answers are ignored).
+    pub fn set_finder_results(&mut self, query: &str, r: &Value) {
+        if let Some(f) = self.st.finder.as_mut()
+            && f.asked == query
+        {
+            f.results = r["results"].as_array().cloned().unwrap_or_default();
+            f.sel = f.sel.min(f.results.len().saturating_sub(1));
+            self.dirty = true;
+        }
+    }
+
+    /// True while the finder is open (tests).
+    pub fn finder_open(&self) -> bool {
+        self.st.finder.is_some()
+    }
+
     /// A folder or note was just created from the chrome: show it (expand its parent) and open
     /// the rename field so it gets a real name right away.
     pub fn created(&mut self, cmd: &str, params: &Value, result: &Value) {

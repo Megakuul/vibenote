@@ -78,7 +78,7 @@ struct Created {
 const DEFAULT_VIEWPORT: [f64; 2] = [3840.0, 2400.0];
 
 /// Canvas area to load first: the visible surface plus a quarter on every side.
-fn view_area(s: &Session, viewport: Option<[f64; 2]>) -> Result<Rect, EngineError> {
+pub(crate) fn view_area(s: &Session, viewport: Option<[f64; 2]>) -> Result<Rect, EngineError> {
     let [w, h] = viewport.unwrap_or(DEFAULT_VIEWPORT);
     let ok = |v: f64| v.is_finite() && v > 0.0 && v <= 1.0e6;
     if !(ok(w) && ok(h)) {
@@ -106,6 +106,8 @@ pub(crate) fn open_note(s: &mut Session, id: u64, viewport: Option<[f64; 2]>) ->
     let area = view_area(s, viewport)?;
     s.load_view(NoteId(id), &area)?;
     s.current_note = Some(NoteId(id));
+    // Every cover is closed again (R-PEN-014).
+    s.revealed.clear();
     s.recent.retain(|n| *n != NoteId(id));
     s.recent.insert(0, NoteId(id));
     s.recent.truncate(crate::quickopen::RECENT);

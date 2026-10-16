@@ -29,6 +29,8 @@ pub fn tool_width(tool: vibenote_model::Tool, base: f32, p: f32, tilt_x: f32, ti
     let w = pressure_width(base, p);
     match tool {
         vibenote_model::Tool::Pen => w,
+        // A cover is as wide at any pressure: it must hide what it is drawn over.
+        vibenote_model::Tool::Cover => base,
         vibenote_model::Tool::Highlighter => {
             let t = tilt_x.hypot(tilt_y);
             let t = if t.is_finite() { t.clamp(0.0, TILT_MAX_DEG) } else { 0.0 };

@@ -240,6 +240,8 @@ pub(crate) fn encode(s: &Stroke) -> Result<Encoded, RenderError> {
     let (color, highlighter) = match s.tool {
         Tool::Highlighter => ((s.color.0 & 0xffff_ff00) | HIGHLIGHTER_ALPHA, true),
         Tool::Pen => (s.color.0, false),
+        // Covers are opaque: they hide what is under them (R-PEN-014).
+        Tool::Cover => (s.color.0 | 0xff, false),
     };
     let mut g = Vec::with_capacity(s.samples.len());
     let mut r_max = 0.0f32;

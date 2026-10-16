@@ -43,7 +43,7 @@ pub(crate) fn trashed(ws: &Workspace, n: &Note) -> bool {
     ws.trashed_notes.contains(&n.id) || n.folder.is_some_and(|f| ws.folder_in_trash(f))
 }
 
-fn fold(s: &str) -> Vec<char> {
+pub(crate) fn fold(s: &str) -> Vec<char> {
     s.chars().flat_map(char::to_lowercase).collect()
 }
 

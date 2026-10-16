@@ -286,6 +286,45 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     Ok(())
 }
 
+/// Width of a player's play/pause button: the left square of its box (R-AUDIO-004).
+pub(crate) fn button_width(b: &vibenote_geom::Rect) -> f64 {
+    b.height()
+}
+
+/// A tap on player `id` at canvas point `at` (R-AUDIO-004): on the button it plays or pauses
+/// (resuming where it paused); on the bar it plays from that point.
+pub(crate) fn tap_player(s: &mut Session, note: NoteId, id: u64, at: (f64, f64)) -> Result<(), EngineError> {
+    let o = super::pdf::object(s, note, id)?;
+    let (Some(b), ObjectKind::Audio { duration_ms, .. }) = (o.kind.bounds(), &o.kind) else {
+        return Err(EngineError::Model(format!("object {id} is not an audio player")));
+    };
+    let oid = ObjectId(id);
+    let state = s.audio.player(oid);
+    let bar0 = b.min.x + button_width(&b);
+    let position_ms = if at.0 < bar0 {
+        match state {
+            Some(v) if v.playing => {
+                s.audio.pause();
+                return Ok(());
+            }
+            Some(v) => v.position_ms,
+            None => 0,
+        }
+    } else {
+        let w = (b.max.x - bar0).max(1.0);
+        let f = ((at.0 - bar0) / w).clamp(0.0, 1.0);
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::cast_precision_loss
+        )]
+        let ms = (f * *duration_ms as f64) as u64;
+        ms
+    };
+    let position_ms = if position_ms >= *duration_ms { 0 } else { position_ms };
+    s.audio_play(oid, position_ms)
+}
+
 /// The note an audio mark's stroke belongs to is the stroke's note; marks follow strokes that
 /// are split (erasers): the pieces keep their parent's moment.
 pub(crate) fn inherit_marks(s: &Session, note: NoteId, parent: ObjectId, pieces: &[ObjectId]) -> Vec<Op> {

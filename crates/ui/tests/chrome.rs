@@ -108,7 +108,10 @@ fn search_and_find_follow_the_keyboard() {
 /// Clicks (press, frame, release, frame) at `p` with `jitter` px of movement in between, as a
 /// pen tip or a slightly moving mouse does.
 fn click(c: &mut Chrome, e: &Engine, p: egui::Pos2, jitter: f32) -> Vec<Action> {
-    let size = (1000.0, 640.0);
+    click_in(c, e, p, jitter, (1000.0, 640.0))
+}
+
+fn click_in(c: &mut Chrome, e: &Engine, p: egui::Pos2, jitter: f32, size: (f32, f32)) -> Vec<Action> {
     let mut out = Vec::new();
     c.event(egui::Event::PointerMoved(p));
     out.extend(c.run(e, size, 1.0, vm(e)));
@@ -215,4 +218,180 @@ fn double_click_renames_and_dragging_a_note_onto_a_folder_moves_it() {
         !a.iter().any(|x| matches!(x, Action::Show { .. })),
         "a drag is no click: {a:?}"
     );
+}
+
+#[test]
+fn a_context_menu_stays_open_while_the_pointer_moves_onto_it() {
+    let e = workspace();
+    let mut c = Chrome::new();
+    let size = (1000.0, 640.0);
+    c.run(&e, size, 1.0, vm(&e));
+    let uni = row(&c, "Uni").unwrap();
+    let p = uni.center();
+    c.event(egui::Event::PointerMoved(p));
+    c.run(&e, size, 1.0, vm(&e));
+    for pressed in [true, false] {
+        c.event(egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+        c.run(&e, size, 1.0, vm(&e));
+    }
+    c.run(&e, size, 1.0, vm(&e));
+    let open = |c: &Chrome| c.covers(f64::from(p.x) + 30.0, f64::from(p.y) + 40.0);
+    assert!(open(&c), "the menu is open below the click");
+    for k in 1..=20u8 {
+        c.event(egui::Event::PointerMoved(
+            p + egui::vec2(f32::from(k) * 1.5, f32::from(k) * 2.0),
+        ));
+        c.run(&e, size, 1.0, vm(&e));
+        assert!(open(&c), "still open after moving {k} steps toward its items");
+    }
+    // Passing "Colour" opened its submenu, which reaches past the sidebar's right edge: that
+    // part is chrome too (it went to the canvas before, and the menu closed).
+    assert!(!c.covers(f64::from(SIDE_W) + 20.0, 600.0), "the canvas is still canvas");
+    assert!(
+        c.covers(f64::from(SIDE_W) + 20.0, f64::from(p.y) + 60.0),
+        "the submenu past the sidebar"
+    );
+}
+
+/// R-VIM-005: the finder takes the keyboard; typing asks for results, Ctrl+N / Ctrl+P move,
+/// Enter opens the selected one, Esc closes. No pointer involved.
+#[test]
+fn the_finder_works_from_the_keyboard_alone() {
+    let mut e = workspace();
+    let mut c = Chrome::new();
+    let size = (1000.0, 640.0);
+    let key = |c: &mut Chrome, key: egui::Key, modifiers: egui::Modifiers| {
+        c.event(egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        });
+    };
+    c.run(&e, size, 1.0, vm(&e));
+    c.open_finder("notes");
+    c.run(&e, size, 1.0, vm(&e));
+    c.run(&e, size, 1.0, vm(&e));
+    assert!(c.wants_keyboard(), "the prompt has the keyboard");
+    c.event(egui::Event::Text("a".into()));
+    let a = c.run(&e, size, 1.0, vm(&e));
+    assert_eq!(
+        a,
+        vec![Action::FinderQuery {
+            kind: "notes",
+            query: "a".into()
+        }]
+    );
+    let r = e
+        .execute("finder.query", json!({"kind": "notes", "query": "a"}))
+        .unwrap();
+    assert!(r["results"].as_array().unwrap().len() >= 2, "{r}");
+    c.set_finder_results("a", &r);
+    c.run(&e, size, 1.0, vm(&e));
+    key(&mut c, egui::Key::N, egui::Modifiers::CTRL);
+    c.run(&e, size, 1.0, vm(&e));
+    key(&mut c, egui::Key::Enter, egui::Modifiers::NONE);
+    let a = c.run(&e, size, 1.0, vm(&e));
+    assert_eq!(
+        a,
+        vec![Action::FinderOpen(r["results"][1].clone())],
+        "Ctrl+N then Enter opens the second"
+    );
+    assert!(!c.finder_open());
+    // Esc closes without opening anything.
+    c.open_finder("text");
+    c.run(&e, size, 1.0, vm(&e));
+    key(&mut c, egui::Key::Escape, egui::Modifiers::NONE);
+    let a = c.run(&e, size, 1.0, vm(&e));
+    assert!(!a.iter().any(|x| matches!(x, Action::FinderOpen(_))));
+    assert!(!c.finder_open());
+}
+
+/// Runs the chrome until egui asks for no immediate frame (as the app does), at most 8 times.
+fn settle(c: &mut Chrome, e: &Engine, size: (f32, f32)) {
+    for _ in 0..8 {
+        if !c.wants_frame() {
+            break;
+        }
+        c.run(e, size, 1.0, vm(e));
+    }
+}
+
+/// R-PEN-013 / R-TEXT-006: the pen's palette sets its colour; while typing, the text palette
+/// colours the selection.
+#[test]
+fn colour_palettes_set_pen_and_text_colours() {
+    let mut e = workspace();
+    let mut c = Chrome::new();
+    let size = (1400.0, 640.0);
+    c.run(&e, size, 1.0, vm(&e));
+    let red = 0xc628_28ffu32;
+    let r = c
+        .swatch_rects()
+        .iter()
+        .find(|(k, _)| *k == red)
+        .map(|(_, r)| *r)
+        .expect("pen swatches shown");
+    let a = click_in(&mut c, &e, r.center(), 0.0, size);
+    assert!(
+        a.contains(&Action::Cmd("settings.set", json!({ "pen_color": red }))),
+        "{a:?}"
+    );
+    e.execute("settings.set", json!({ "pen_color": red })).unwrap();
+    // Editing text: the text palette.
+    let t = e
+        .execute(
+            "text.create",
+            json!({"at": [400.0, 400.0], "width": 300.0, "content": "abc"}),
+        )
+        .unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    e.execute("text.open", json!({"id": t, "offset": 0})).unwrap();
+    c.invalidate();
+    c.run(&e, size, 1.0, vm(&e));
+    // The palette button opens the text colours.
+    let b = c
+        .swatch_rects()
+        .iter()
+        .find(|(k, _)| *k == 0)
+        .map(|(_, r)| *r)
+        .expect("palette button");
+    click_in(&mut c, &e, b.center(), 0.0, size);
+    settle(&mut c, &e, size);
+    let blue = 0x1f5f_bfffu32;
+    let r = c
+        .swatch_rects()
+        .iter()
+        .find(|(k, _)| *k == blue)
+        .map(|(_, r)| *r)
+        .expect("text swatches shown");
+    let a = click_in(&mut c, &e, r.center(), 0.0, size);
+    assert!(
+        a.contains(&Action::Cmd("text.style", json!({"format": "color", "value": blue}))),
+        "{a:?}"
+    );
+}
+
+/// R-AUDIO-004: a failed action is shown to the user, at the bottom, for a few seconds.
+#[test]
+fn errors_are_shown_as_a_notice() {
+    let e = workspace();
+    let mut c = Chrome::new();
+    let size = (1000.0, 640.0);
+    c.run(&e, size, 1.0, vm(&e));
+    c.notify("Could not start recording: no input device".into());
+    // (A new area is sized in its first frame and drawn in the next; the app runs again.)
+    c.run(&e, size, 1.0, vm(&e));
+    c.run(&e, size, 1.0, vm(&e));
+    assert_eq!(c.notice(), Some("Could not start recording: no input device"));
+    assert!(c.covers(500.0, 610.0), "the notice is drawn at the bottom");
+    settle(&mut c, &e, size);
+    assert!(c.wake_in().is_some(), "it goes away by itself");
 }

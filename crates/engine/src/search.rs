@@ -254,6 +254,24 @@ impl crate::Session {
         Ok((rows, links))
     }
 
+    /// Every row of typed text and recognised handwriting (the finder, R-VIM-005).
+    pub(crate) fn written_rows(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<vibenote_storage::search::SearchRow>, crate::EngineError> {
+        if self.persistent() {
+            return match self.reader.with(|st| st.written(limit)) {
+                Some(r) => r.map_err(crate::EngineError::Storage),
+                None => Ok(Vec::new()),
+            };
+        }
+        self.ensure_mem_index()?;
+        match self.mem_index().as_ref() {
+            Some(ix) => vibenote_storage::search::written(ix.conn(), limit).map_err(storage),
+            None => Ok(Vec::new()),
+        }
+    }
+
     /// Searches everything (R-SEARCH-001): names, then content grouped by note; trashed items
     /// are left out. The engine brings storage in sync before (see `Engine::prepare_search`).
     pub(crate) fn search(

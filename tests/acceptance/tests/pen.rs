@@ -347,3 +347,92 @@ fn r_pen_012_mouse_draws() {
             .all(|s| (s["pressure"].as_f64().unwrap() - 0.5).abs() < 1e-4)
     );
 }
+
+/// A mouse stroke from (x0, y) to (x1, y).
+fn mouse_line(e: &mut vibenote_engine::Engine, t0: u64, (x0, x1): (f64, f64), y: f64) {
+    run(
+        e,
+        "input.pointer",
+        json!({"events": [
+            {"t_us": t0, "kind": "down", "x": x0, "y": y},
+            {"t_us": t0 + 8000, "kind": "motion", "x": (x0 + x1) / 2.0, "y": y},
+            {"t_us": t0 + 16000, "kind": "motion", "x": x1, "y": y},
+            {"t_us": t0 + 24000, "kind": "up", "x": x1, "y": y}]}),
+    );
+}
+
+/// R-PEN-013: pen and highlighter each have a colour; new strokes use it; it persists.
+#[test]
+fn r_pen_013_colours() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ws.sqlite");
+    let mut e = vibenote_engine::Engine::open(&path).unwrap();
+    let n = id(&run(&mut e, "workspace.note.create", json!({"name": "c"})));
+    run(&mut e, "note.open", json!({"id": n}));
+    run(
+        &mut e,
+        "settings.set",
+        json!({"pen_color": 0xc628_28ffu32, "highlighter_color": 0x7ed9_57ffu32}),
+    );
+    mouse_line(&mut e, 0, (10.0, 200.0), 50.0);
+    run(&mut e, "tool.select.highlighter", json!({}));
+    mouse_line(&mut e, 100_000, (10.0, 200.0), 150.0);
+    let o = objects(&e, n);
+    let colors: Vec<(String, u64)> = o
+        .iter()
+        .map(|s| (s["tool"].as_str().unwrap().to_string(), s["color"].as_u64().unwrap()))
+        .collect();
+    assert_eq!(
+        colors,
+        vec![
+            ("pen".to_string(), 0xc628_28ff),
+            ("highlighter".to_string(), 0x7ed9_57ff)
+        ]
+    );
+    drop(e);
+    let e = vibenote_engine::Engine::open(&path).unwrap();
+    assert_eq!(e.inspect(Some("/settings/pen_color")).unwrap(), json!(0xc628_28ffu32));
+}
+
+/// R-PEN-014: covers hide what is under them; a tap reveals (no ink), a second tap hides;
+/// reopening the note closes them; they are stored as covers and never recognised as writing.
+#[test]
+fn r_pen_014_cover() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ws.sqlite");
+    let mut e = vibenote_engine::Engine::open(&path).unwrap();
+    let n = id(&run(&mut e, "workspace.note.create", json!({"name": "cards"})));
+    let other = id(&run(&mut e, "workspace.note.create", json!({"name": "other"})));
+    run(&mut e, "note.open", json!({"id": n}));
+    run(&mut e, "tool.select.cover", json!({}));
+    mouse_line(&mut e, 0, (10.0, 300.0), 100.0);
+    let o = objects(&e, n);
+    assert_eq!(o.len(), 1);
+    assert_eq!(o[0]["tool"], "cover");
+    let cover = o[0]["id"].as_u64().unwrap();
+    assert!(e.session.open_block.is_none(), "a cover never starts a writing block");
+    let tap = |e: &mut vibenote_engine::Engine, t: u64| {
+        run(
+            e,
+            "input.pointer",
+            json!({"events": [{"t_us": t, "kind": "down", "x": 150.0, "y": 101.0}, {"t_us": t + 5000, "kind": "up", "x": 150.0, "y": 101.0}]}),
+        );
+    };
+    // With the pen tool too: a tap on a cover is not a dot.
+    run(&mut e, "tool.select.pen", json!({}));
+    tap(&mut e, 1_000_000);
+    assert_eq!(objects(&e, n).len(), 1, "no ink from the tap");
+    assert!(e.session.revealed.contains(&vibenote_model::ObjectId(cover)));
+    tap(&mut e, 2_000_000);
+    assert!(e.session.revealed.is_empty(), "a second tap hides it again");
+    tap(&mut e, 3_000_000);
+    run(&mut e, "note.open", json!({"id": other}));
+    run(&mut e, "note.open", json!({"id": n}));
+    assert!(e.session.revealed.is_empty(), "reopening closes every cover");
+    drop(e);
+    let e = vibenote_engine::Engine::open(&path).unwrap();
+    let mut e = e;
+    run(&mut e, "note.open", json!({"id": n}));
+    e.load_all().unwrap();
+    assert_eq!(objects(&e, n)[0]["tool"], "cover", "stored as a cover");
+}

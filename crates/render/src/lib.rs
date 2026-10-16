@@ -5,6 +5,7 @@
 //! images and the CLI (`render-png`). LOD, the tile cache, PDF/image layers and text boxes
 //! arrive with their milestones (ADR 0003/0004/0002).
 
+pub mod code;
 mod encode;
 mod image;
 mod lod_worker;
@@ -18,7 +19,7 @@ pub use pipeline::{
     GpuFault, HEADLESS_FORMAT, Headless, ImageQuad, Renderer, Scene, Viewport, instance, request_device,
 };
 pub use scene::{FrameBudget, FrameStats};
-pub use text::TextItem;
+pub use text::{TextItem, measure as text_measure};
 /// Re-exported so the UI uses the exact wgpu build the renderer was compiled against.
 pub use wgpu;
 
@@ -43,4 +44,11 @@ pub const PAPER: [u8; 4] = [251, 250, 246, 255];
 pub mod fonts {
     pub static INTER: &[u8] = include_bytes!("../../../assets/fonts/InterVariable.ttf");
     pub static INTER_ITALIC: &[u8] = include_bytes!("../../../assets/fonts/InterVariable-Italic.ttf");
+    /// Monospace for text boxes in vim mode (R-VIM-001).
+    pub static MONO: [&[u8]; 4] = [
+        include_bytes!("../../../assets/fonts/JetBrainsMonoNL-Regular.ttf"),
+        include_bytes!("../../../assets/fonts/JetBrainsMonoNL-Bold.ttf"),
+        include_bytes!("../../../assets/fonts/JetBrainsMonoNL-Italic.ttf"),
+        include_bytes!("../../../assets/fonts/JetBrainsMonoNL-BoldItalic.ttf"),
+    ];
 }

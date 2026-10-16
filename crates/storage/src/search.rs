@@ -250,6 +250,31 @@ pub fn query(
     Ok(out)
 }
 
+/// Every row of typed text and recognised handwriting (sources "text" and "ink"), at most
+/// `limit`, for the finder's fuzzy matching (R-VIM-005).
+pub fn written(c: &Connection, limit: usize) -> Result<Vec<SearchRow>, StorageError> {
+    let mut st = c.prepare_cached(
+        "SELECT object, note, source, page, region, raw FROM search_row WHERE source IN ('text', 'ink')
+         ORDER BY note, object LIMIT ?1",
+    )?;
+    let lim = i64::try_from(limit).unwrap_or(i64::MAX);
+    let mut rows = st.query(params![lim])?;
+    let mut out = Vec::new();
+    while let Some(r) = rows.next()? {
+        let (object, note): (i64, i64) = (r.get(0)?, r.get(1)?);
+        let page: Option<i64> = r.get(3)?;
+        out.push(SearchRow {
+            object: ObjectId(u(object)?),
+            note: NoteId(u(note)?),
+            source: r.get(2)?,
+            page: page.and_then(|p| u32::try_from(p).ok()),
+            region: region_of(r.get(4)?),
+            raw: r.get(5)?,
+        });
+    }
+    Ok(out)
+}
+
 /// All link objects (optionally of one note).
 pub fn links(c: &Connection, only: Option<NoteId>) -> Result<Vec<LinkRow>, StorageError> {
     let mut st = c.prepare_cached(

@@ -99,6 +99,8 @@ impl Sample {
 pub enum Tool {
     Pen,
     Highlighter,
+    /// An opaque cover over what is underneath, revealed by a tap (R-PEN-014).
+    Cover,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

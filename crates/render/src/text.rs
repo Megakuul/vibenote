@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use vibenote_geom::Point;
 use vibenote_model::{Color, TextMark, TextStyle};
 
-use crate::fonts::{INTER, INTER_ITALIC};
+use crate::fonts::{INTER, INTER_ITALIC, MONO};
 
 /// Line height relative to the font size.
 const LINE: f32 = 1.3;
@@ -38,6 +38,22 @@ pub struct TextItem {
     pub content: String,
     pub marks: Vec<TextMark>,
     pub color: Color,
+    /// Monospace (vim mode, R-VIM-001); part of `key`.
+    pub mono: bool,
+}
+
+/// The font family of an item.
+fn family(item: &TextItem) -> Family<'static> {
+    family_of(item.mono)
+}
+
+/// The monospace family, or the text family.
+fn family_of(mono: bool) -> Family<'static> {
+    if mono {
+        Family::Name("JetBrains Mono NL")
+    } else {
+        Family::Name("Inter Variable")
+    }
 }
 
 fn gcolor(c: Color) -> GColor {
@@ -54,6 +70,8 @@ struct CharStyle {
     strike: bool,
     color: Option<Color>,
     size: f32,
+    /// Code (R-TEXT-007): monospace.
+    mono: bool,
 }
 
 /// Per-character styles from the character marks, by a sweep over mark boundaries
@@ -122,6 +140,7 @@ fn char_styles(n: usize, marks: &[TextMark], base: CharStyle) -> Vec<CharStyle> 
             strike: flags[3] > 0,
             color: colors.last_key_value().map(|(_, c)| *c),
             size: sizes.last_key_value().map_or(base.size, |(_, s)| *s),
+            mono: false,
         });
     }
     out
@@ -197,8 +216,15 @@ fn spans(item: &TextItem) -> Vec<(String, CharStyle)> {
         strike: false,
         color: None,
         size: item.size,
+        mono: false,
     };
     let styles = char_styles(chars.len(), &item.marks, base);
+    // Code blocks (R-TEXT-007): monospace and highlighted (an explicit colour mark wins).
+    let code = if item.content.contains("```") {
+        crate::code::line_tokens(&item.content)
+    } else {
+        Vec::new()
+    };
     let mut out: Vec<(String, CharStyle)> = Vec::new();
     let push = |out: &mut Vec<(String, CharStyle)>, c: char, st: CharStyle| match out.last_mut() {
         Some((s, last)) if *last == st => s.push(c),
@@ -257,8 +283,18 @@ fn spans(item: &TextItem) -> Vec<(String, CharStyle)> {
                 }),
             );
         }
+        let toks = code.get(li).and_then(Option::as_ref);
         for (k, c) in line.iter().enumerate() {
-            let st = styles.get(start.saturating_add(k)).copied().unwrap_or(base);
+            let mut st = styles.get(start.saturating_add(k)).copied().unwrap_or(base);
+            if let Some(toks) = toks {
+                st.mono = true;
+                if let Some(&(_, _, t)) = toks.iter().find(|&&(a, b, _)| a <= k && k < b) {
+                    st.color = st.color.or(Some(t.color()));
+                    if t == crate::code::Token::Comment {
+                        st.italic = true;
+                    }
+                }
+            }
             push(&mut out, *c, line_style(st));
         }
         if li.saturating_add(1) < count {
@@ -280,10 +316,12 @@ pub(crate) struct TextState {
 
 impl TextState {
     pub(crate) fn new() -> TextState {
-        let fonts = FontSystem::new_with_fonts([
-            glyphon::fontdb::Source::Binary(std::sync::Arc::new(INTER)),
-            glyphon::fontdb::Source::Binary(std::sync::Arc::new(INTER_ITALIC)),
-        ]);
+        let fonts = FontSystem::new_with_fonts(
+            [INTER, INTER_ITALIC]
+                .into_iter()
+                .chain(MONO)
+                .map(|f| glyphon::fontdb::Source::Binary(std::sync::Arc::new(f))),
+        );
         TextState {
             fonts,
             swash: SwashCache::new(),
@@ -309,7 +347,7 @@ impl TextState {
             .iter()
             .map(|(t, st)| {
                 let mut a = Attrs::new()
-                    .family(Family::Name("Inter Variable"))
+                    .family(family_of(item.mono || st.mono))
                     .weight(if st.bold { Weight::BOLD } else { Weight::NORMAL })
                     .style(if st.italic { Style::Italic } else { Style::Normal })
                     .metrics(Metrics::new(st.size, st.size * LINE));
@@ -325,12 +363,7 @@ impl TextState {
                 (t.as_str(), a)
             })
             .collect();
-        buf.set_rich_text(
-            attrs,
-            &Attrs::new().family(Family::Name("Inter Variable")),
-            Shaping::Advanced,
-            None,
-        );
+        buf.set_rich_text(attrs, &Attrs::new().family(family(item)), Shaping::Advanced, None);
         buf.shape_until_scroll(&mut self.fonts, false);
         self.buffers.insert(item.key, (buf, self.frame));
     }
@@ -385,6 +418,22 @@ impl TextState {
         u32::try_from(item.content.chars().count()).unwrap_or(u32::MAX)
     }
 
+    /// The laid-out extent of `item`: (widest line, total height) in canvas units; an empty
+    /// item is one line high and has no width.
+    pub(crate) fn extent(&mut self, item: &TextItem) -> (f64, f64) {
+        self.layout(item);
+        let line = f64::from(item.size.max(1.0) * LINE);
+        let Some((buf, _)) = self.buffers.get(&item.key) else {
+            return (0.0, line);
+        };
+        let (mut w, mut h) = (0.0f64, 0.0f64);
+        for r in buf.layout_runs() {
+            w = w.max(f64::from(r.line_w));
+            h = h.max(f64::from(r.line_top + r.line_height));
+        }
+        (w, h.max(line))
+    }
+
     /// The caret before content offset `offset`: (x, top, height) in canvas units.
     pub(crate) fn caret(&mut self, item: &TextItem, offset: u32) -> (f64, f64, f64) {
         self.layout(item);
@@ -436,13 +485,57 @@ impl TextState {
             if r.line_i < ca.line || r.line_i > cb.line {
                 continue;
             }
+            let mut any = false;
             for (x, w) in r.highlight(ca, cb) {
+                any = true;
                 out.push([
                     item.origin.x + f64::from(x),
                     item.origin.y + f64::from(r.line_top),
                     item.origin.x + f64::from(x + w),
                     item.origin.y + f64::from(r.line_top + r.line_height),
                 ]);
+            }
+            // An empty line inside the range has no glyphs to highlight: an empty rectangle
+            // marks its row.
+            if !any && r.glyphs.is_empty() && (r.line_i > ca.line || ca.index == 0) && r.line_i < cb.line {
+                let top = item.origin.y + f64::from(r.line_top);
+                out.push([
+                    item.origin.x,
+                    top,
+                    item.origin.x,
+                    item.origin.y + f64::from(r.line_top + r.line_height),
+                ]);
+            }
+        }
+        out
+    }
+
+    /// The tinted backgrounds of code blocks (R-TEXT-007) of laid-out items: per laid-out row
+    /// of a block, `[x0, y0, x1, y1]` in canvas units across the box's wrap width.
+    pub(crate) fn code_backgrounds(&mut self, items: &[TextItem]) -> Vec<[f64; 4]> {
+        let mut out = Vec::new();
+        for item in items {
+            if !item.content.contains("```") {
+                continue;
+            }
+            let blocks = crate::code::blocks(&item.content);
+            if blocks.is_empty() {
+                continue;
+            }
+            self.layout(item);
+            let Some((buf, _)) = self.buffers.get(&item.key) else {
+                continue;
+            };
+            let pad = f64::from(item.size.max(1.0)) * 0.3;
+            for r in buf.layout_runs() {
+                if blocks.iter().any(|b| b.first <= r.line_i && r.line_i <= b.last) {
+                    out.push([
+                        item.origin.x - pad,
+                        item.origin.y + f64::from(r.line_top),
+                        item.origin.x + item.width + pad,
+                        item.origin.y + f64::from(r.line_top + r.line_height),
+                    ]);
+                }
             }
         }
         out
@@ -577,6 +670,39 @@ impl TextState {
     }
 }
 
+/// Results of [`measure`] by item key, and the layout state behind it (no GPU).
+struct Measurer {
+    state: TextState,
+    sizes: HashMap<u64, (f64, f64)>,
+}
+
+static MEASURER: std::sync::Mutex<Option<Measurer>> = std::sync::Mutex::new(None);
+
+/// Most remembered measurements (and laid-out buffers) before they are dropped.
+const MEASURE_CACHE: usize = 4096;
+
+/// The laid-out extent of a text item, (widest line, height) in canvas units, from the same
+/// layout the renderer draws (R-TEXT-004). Cached by the item key.
+pub fn measure(item: &TextItem) -> (f64, f64) {
+    let mut g = MEASURER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let m = g.get_or_insert_with(|| Measurer {
+        state: TextState::new(),
+        sizes: HashMap::new(),
+    });
+    if let Some(s) = m.sizes.get(&item.key) {
+        return *s;
+    }
+    if m.sizes.len() >= MEASURE_CACHE {
+        m.sizes.clear();
+        m.state.buffers.clear();
+    }
+    let s = m.state.extent(item);
+    // The measuring state keeps no layouts beyond what the cache needs.
+    m.state.buffers.remove(&item.key);
+    m.sizes.insert(item.key, s);
+    s
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
@@ -592,6 +718,7 @@ mod tests {
             strike: false,
             color: None,
             size: item.size,
+            mono: false,
         };
         let mut styles = vec![base; chars.len()];
         for m in &item.marks {
@@ -763,6 +890,7 @@ mod tests {
             content: content.into(),
             marks,
             color: Color::INK,
+            mono: false,
         }
     }
 
@@ -796,6 +924,19 @@ mod tests {
         assert_eq!(st.hit(&it, (2000.0, 500.0)), 5, "below: the end");
         let r = st.ranges(&it, 1, 4);
         assert_eq!(r.len(), 2, "one box per line: {r:?}");
+    }
+
+    #[test]
+    fn a_selected_empty_line_has_a_row() {
+        let mut st = TextState::new();
+        let it = item("ab\n\ncd", Vec::new());
+        // "b", the empty line and "c": three rows, the middle one empty.
+        let r = st.ranges(&it, 1, 5);
+        assert_eq!(r.len(), 3, "{r:?}");
+        assert!(r[0][1] < r[1][1] && r[1][1] < r[2][1], "{r:?}");
+        assert!((r[1][2] - r[1][0]).abs() < 1e-9, "{r:?}");
+        // A selection ending at the empty line's start does not include it.
+        assert_eq!(st.ranges(&it, 0, 3).len(), 1);
     }
 
     #[test]

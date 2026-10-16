@@ -18,6 +18,7 @@ pub mod quickopen;
 pub mod search;
 
 pub use command::{Command, Registry, Spec};
+pub use extras::{VIM_COLUMNS, frame_of as text_frame, vim_pad};
 pub use gesture::{CursorHint, Handle};
 pub use persist::Status as StorageStatus;
 
@@ -131,6 +132,25 @@ pub struct LiveInput {
     /// this touch draws nothing (`true` for the mouse).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snapped: Option<bool>,
+    /// The last press (time µs, surface px) and whether the current press is a double click
+    /// with it (text: a double click selects the word).
+    #[serde(skip)]
+    pub last_down: Option<(u64, f64, f64)>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub double: bool,
+    /// Shift is held (the last pointer event said so).
+    #[serde(skip)]
+    pub shift: bool,
+    /// Presses in a row at one spot: 1, 2 (double click: a word), 3 (triple click: a line).
+    #[serde(skip)]
+    pub clicks: u8,
+    /// A press into a text box's text that a drag extends into a selection (R-TEXT-005):
+    /// where it started, and whether it is the mouse's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_drag: Option<((f64, f64), bool)>,
+    /// The ruler is being moved or rotated (R-RULER-001).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ruler_drag: Option<commands::shape::RulerDrag>,
 }
 
 /// The stroke the pen tool commits (and the live preview draws): same tool, colour and width.
@@ -166,21 +186,34 @@ pub const HIGHLIGHTER_COLOR: vibenote_model::Color = vibenote_model::Color(0xf5c
 /// The stroke the selected tool commits from pen-tip samples (R-PEN-005), or `None` for tools
 /// that do not draw ink (erasers, lasso, shapes, text: their own milestones).
 pub fn tool_stroke(
-    tool: vibenote_model::settings::ToolKind,
+    settings: &vibenote_model::settings::Settings,
     samples: Vec<vibenote_model::Sample>,
 ) -> Option<vibenote_model::Stroke> {
     use vibenote_model::settings::ToolKind;
-    match tool {
-        ToolKind::Pen => Some(pen_stroke(samples)),
+    match settings.tool {
+        ToolKind::Pen => Some(vibenote_model::Stroke {
+            color: settings.pen_color,
+            ..pen_stroke(samples)
+        }),
         ToolKind::Highlighter => Some(vibenote_model::Stroke {
             tool: vibenote_model::Tool::Highlighter,
-            color: HIGHLIGHTER_COLOR,
+            color: settings.highlighter_color,
             width: 12.0,
+            samples,
+        }),
+        ToolKind::Cover => Some(vibenote_model::Stroke {
+            tool: vibenote_model::Tool::Cover,
+            color: COVER_COLOR,
+            width: COVER_WIDTH,
             samples,
         }),
         _ => None,
     }
 }
+
+/// Colour and width (canvas units) of a cover (R-PEN-014).
+pub const COVER_COLOR: vibenote_model::Color = vibenote_model::Color(0x5b65_77ff);
+pub const COVER_WIDTH: f32 = 28.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStroke {
@@ -393,6 +426,9 @@ pub struct Session {
     pub keymap_overrides: std::collections::BTreeMap<String, Option<String>>,
     /// The ruler (R-RULER-001).
     pub ruler: commands::shape::Ruler,
+    /// Covers revealed by a tap (R-PEN-014); all close again when a note is opened.
+    #[serde(skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub revealed: std::collections::BTreeSet<vibenote_model::ObjectId>,
     /// Writing blocks prettify would tidy, in mode "suggest" (R-HWR-006).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub suggestions: Vec<hwr::Suggestion>,
@@ -402,6 +438,12 @@ pub struct Session {
     /// Typing into this text box extends the last undo step instead of adding one.
     #[serde(skip)]
     pub(crate) coalesce: Option<(NoteId, u64)>,
+    /// Vim's unnamed register: text and whether it holds whole lines (R-VIM-002).
+    #[serde(skip)]
+    pub(crate) register: Option<(String, bool)>,
+    /// A leader-key sequence in progress ("␠", "␠f") and when its last key came (ms; R-VIM-004).
+    #[serde(skip)]
+    pub(crate) leader: Option<(String, Option<u64>)>,
     /// What the UI shows besides the canvas (panels opened by commands; R-CMD-001).
     pub ui: UiState,
     /// Ids of all registered commands (keymap validation).
@@ -606,7 +648,12 @@ impl Session {
             .stroke
             .as_ref()
             .filter(|l| l.tool == vibenote_ink::input::PenTool::Pen && self.barrel(l.button).is_none())
-            .and_then(|l| tool_stroke(self.settings.tool, l.samples.clone()))
+            .and_then(|l| tool_stroke(&self.settings, l.samples.clone()))
+            .map(|mut st| {
+                // Laid along the ruler already while drawing (R-RULER-001).
+                commands::shape::ruler_snap(self, &mut st);
+                st
+            })
     }
 
     /// What a held barrel button does (`None`: no button, or one set to do nothing).
@@ -670,7 +717,8 @@ impl Session {
                 })
                 .collect(),
         };
-        let mut out = Vec::new();
+        // The ruler first: lasso paths and selection boxes stay visible over it.
+        let mut out = self.ruler.strokes(zoom);
         if let Some(ls) = self.live.stroke.as_ref().filter(|l| self.lassoing(l)) {
             let mut pts: Vec<(f64, f64)> = ls.samples.iter().map(|p| (p.x, p.y)).collect();
             if let Some(&first) = pts.first() {
@@ -1385,7 +1433,7 @@ impl Engine {
     }
 
     pub fn execute(&mut self, cmd: &str, params: Value) -> Result<Value, EngineError> {
-        if cmd.starts_with("search.") {
+        if cmd.starts_with("search.") || cmd == "finder.query" {
             let wait = params.get("wait").and_then(Value::as_bool).unwrap_or(true);
             self.prepare_search(wait);
         }

@@ -19,6 +19,7 @@ enum ToolP {
     Lasso,
     Shape,
     Text,
+    Cover,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -103,6 +104,11 @@ struct SettingsP {
     shape: Option<ShapeP>,
     /// Snap rough shapes when the pen lifts instead of after holding still (R-SHAPE-002).
     snap_on_lift: Option<bool>,
+    /// Vim mode for text boxes (R-VIM-001).
+    vim: Option<bool>,
+    /// Colours of new pen / highlighter strokes, 0xRRGGBBAA (R-PEN-013).
+    pen_color: Option<u32>,
+    highlighter_color: Option<u32>,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -153,6 +159,7 @@ fn tool(t: ToolP) -> ToolKind {
         ToolP::Lasso => ToolKind::Lasso,
         ToolP::Shape => ToolKind::Shape,
         ToolP::Text => ToolKind::Text,
+        ToolP::Cover => ToolKind::Cover,
     }
 }
 
@@ -196,8 +203,8 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "settings.set",
-            doc: "Change workspace settings (tool, eraser_mode, prettify_mode, block_idle_ms, prediction_ms, background, barrel1, barrel2, shape, snap_on_lift); returns all settings.",
-            reqs: &["R-PEN-006", "R-PEN-010", "R-HWR-001", "R-HWR-006", "R-CANVAS-006"],
+            doc: "Change workspace settings (tool, eraser_mode, prettify_mode, block_idle_ms, prediction_ms, background, barrel1, barrel2, shape, snap_on_lift, vim, pen_color, highlighter_color); returns all settings.",
+            reqs: &["R-PEN-006", "R-PEN-010", "R-HWR-001", "R-HWR-006", "R-CANVAS-006", "R-VIM-001", "R-PEN-013"],
             implemented: true,
         },
         |s: &mut Session, p: SettingsP| {
@@ -216,6 +223,9 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
                 barrel2: p.barrel2.map_or(c.barrel2, barrel),
                 shape: p.shape.map_or(c.shape, shape),
                 snap_on_lift: p.snap_on_lift.unwrap_or(c.snap_on_lift),
+                vim: p.vim.unwrap_or(c.vim),
+                pen_color: p.pen_color.map_or(c.pen_color, vibenote_model::Color),
+                highlighter_color: p.highlighter_color.map_or(c.highlighter_color, vibenote_model::Color),
             };
             update(s, next)
         },
@@ -298,6 +308,12 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
             "Select the text tool.",
             &["R-PEN-005", "R-TEXT-001"],
             ToolKind::Text,
+        ),
+        (
+            "tool.select.cover",
+            "Select the cover tool: opaque strokes that hide what is under them until tapped (flashcards).",
+            &["R-PEN-005", "R-PEN-014"],
+            ToolKind::Cover,
         ),
     ] {
         r.register(Box::new(Typed::new(

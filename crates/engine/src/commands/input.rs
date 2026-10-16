@@ -107,6 +107,20 @@ fn finish(s: &mut Session, out: &mut BatchResult) {
         }
         return;
     }
+    // A tap on a cover reveals or hides what is under it; on an audio player it plays,
+    // pauses or seeks (R-PEN-014, R-AUDIO-004). Nothing is drawn.
+    if let Some(&(x0, y0)) = path.first()
+        && path.iter().all(|&(x, y)| (x - x0).hypot(y - y0) * s.zoom() < TAP_PX)
+    {
+        match tap_object(s, ls.note, (x0, y0), ls.mouse) {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(e) => {
+                out.errors.push(e.to_string());
+                return;
+            }
+        }
+    }
     // The text tool: a tap edits the text box there or starts a new one (R-TEXT-001).
     if s.settings.tool == vibenote_model::settings::ToolKind::Text {
         if let Some(first) = ls.samples.first()
@@ -123,13 +137,16 @@ fn finish(s: &mut Session, out: &mut BatchResult) {
         return;
     }
     let end_us = ls.t0_us.saturating_add(ls.samples.last().map_or(0, |p| p.t_us));
-    match crate::tool_stroke(s.settings.tool, ls.samples) {
+    match crate::tool_stroke(&s.settings, ls.samples) {
         Some(stroke) => match super::ink::add_stroke(s, ls.note, stroke, Some(ls.t0_us)) {
             Ok(id) if lift_snap(s, ls.note, id.0, ls.tool, ls.button) => out.committed.push(id.0),
             Ok(id) => {
                 out.committed.push(id.0);
-                // Writing blocks for recognition (R-HWR-001, R-HWR-008).
-                s.block_add(ls.note, id, ls.t0_us, end_us);
+                // Writing blocks for recognition (R-HWR-001, R-HWR-008); covers are never
+                // writing (R-PEN-014).
+                if s.settings.tool != vibenote_model::settings::ToolKind::Cover {
+                    s.block_add(ls.note, id, ls.t0_us, end_us);
+                }
             }
             Err(e) => out.errors.push(e.to_string()),
         },
@@ -280,7 +297,7 @@ pub(crate) fn hold(s: &mut Session, now_us: u64, out: &mut Vec<String>) -> bool 
     }
     let Some(ls) = s.live.stroke.take() else { return false };
     let mouse = ls.mouse;
-    let Some(stroke) = crate::tool_stroke(s.settings.tool, ls.samples) else {
+    let Some(stroke) = crate::tool_stroke(&s.settings, ls.samples) else {
         return false;
     };
     let id = match super::ink::add_stroke(s, ls.note, stroke, Some(ls.t0_us)) {
@@ -342,7 +359,10 @@ fn finish_drag(s: &mut Session, out: &mut BatchResult) {
         (true, _) if !d.xform.is_identity() => super::selection::apply_xform(s, &d.xform),
         // A tap on a selected text box with the text tool: type into it there.
         (false, _) if s.settings.tool == vibenote_model::settings::ToolKind::Text => match s.single_text() {
-            Some((id, _)) => super::text::edit(s, d.note, id, d.start),
+            Some((id, _)) => {
+                let word = s.live.double;
+                super::text::edit(s, d.note, id, d.start, word)
+            }
             None => Ok(()),
         },
         _ => Ok(()),
@@ -350,6 +370,64 @@ fn finish_drag(s: &mut Session, out: &mut BatchResult) {
     if let Err(e) = r {
         out.errors.push(e.to_string());
     }
+}
+
+/// A text-tool press: true if it landed on a text box (typing there, or moving its frame).
+fn text_press(s: &mut Session, e: &PenEvent, mouse: bool, out: &mut BatchResult) -> bool {
+    let Some(note) = s.current_note else { return false };
+    finish(s, out);
+    let at = s.view.to_canvas(e.x, e.y);
+    match super::text::press(s, note, at, s.live.shift, mouse) {
+        Ok(super::text::Press::Missed) => false,
+        Ok(_) => true,
+        Err(err) => {
+            out.errors.push(err.to_string());
+            true
+        }
+    }
+}
+
+/// Strokes shorter than this (screen px) are taps (on covers, players).
+const TAP_PX: f64 = 4.0;
+
+/// A tap at `at` with a drawing tool: toggles the topmost cover there or controls an audio
+/// player. True if it hit one (and nothing is drawn).
+fn tap_object(s: &mut Session, note: vibenote_model::NoteId, at: (f64, f64), mouse: bool) -> Result<bool, EngineError> {
+    use vibenote_model::{ObjectId, ObjectKind, Tool};
+    let hits = super::pdf::hits_at(s, note, at, TAP_PX / s.zoom())?;
+    let canvas = s.ws.canvas(note)?;
+    for id in hits {
+        let Some(o) = canvas.objects.get(&ObjectId(id)) else {
+            continue;
+        };
+        match &o.kind {
+            ObjectKind::Stroke(st) if st.tool == Tool::Cover => {
+                let id = ObjectId(id);
+                if !s.revealed.remove(&id) {
+                    s.revealed.insert(id);
+                }
+                return Ok(true);
+            }
+            ObjectKind::Audio { .. } => {
+                super::audio::tap_player(s, note, id, at)?;
+                return Ok(true);
+            }
+            // A mouse click with the pen or highlighter types into a text box (R-TEXT-005).
+            ObjectKind::Text { .. }
+                if mouse
+                    && matches!(
+                        s.settings.tool,
+                        vibenote_model::settings::ToolKind::Pen | vibenote_model::settings::ToolKind::Highlighter
+                    ) =>
+            {
+                super::text::press(s, note, at, false, true)?;
+                s.live.text_drag = None;
+                return Ok(true);
+            }
+            _ => {}
+        }
+    }
+    Ok(false)
 }
 
 /// Lasso taps shorter than this (screen px) select the object under them instead.
@@ -373,6 +451,19 @@ fn press_selection(s: &mut Session, e: &PenEvent, mouse: bool) -> bool {
 /// Feeds one event from the pen (`mouse` false) or the mouse (true). Each device only extends
 /// and ends its own live stroke (review M4 M4: a touchpad click must not merge into pen ink).
 fn step(s: &mut Session, e: &PenEvent, mouse: bool, out: &mut BatchResult) {
+    if e.kind == PenEventKind::Down {
+        let near = s.live.last_down.is_some_and(|(t, x, y)| {
+            e.t_us.saturating_sub(t) <= DOUBLE_CLICK_US && (e.x - x).hypot(e.y - y) <= DOUBLE_CLICK_PX
+        });
+        // 1, 2 (double click), 3 (triple click), then a fourth press starts over.
+        s.live.clicks = if near && s.live.clicks < 3 {
+            s.live.clicks.saturating_add(1)
+        } else {
+            1
+        };
+        s.live.double = s.live.clicks == 2;
+        s.live.last_down = Some((e.t_us, e.x, e.y));
+    }
     let mine = |s: &Session| s.live.stroke.as_ref().is_some_and(|l| l.mouse == mouse);
     let dragging = s.live.drag.as_ref().is_some_and(|d| d.mouse == mouse);
     // After a hold turned the stroke into a shape, the touch ends without drawing.
@@ -398,6 +489,9 @@ fn step(s: &mut Session, e: &PenEvent, mouse: bool, out: &mut BatchResult) {
             s.live.tool = None;
             s.live.hover = None;
             s.live.button = None;
+            if s.live.ruler_drag.is_some_and(|d| d.mouse == mouse) {
+                s.live.ruler_drag = None;
+            }
             if !mouse && s.live.pen_pan {
                 s.live.pen_pan = false;
                 s.live.pan = None;
@@ -418,6 +512,47 @@ fn step(s: &mut Session, e: &PenEvent, mouse: bool, out: &mut BatchResult) {
         PenEventKind::Up if !mouse && s.live.pen_pan => {
             s.live.pen_pan = false;
             s.live.pan = None;
+        }
+        // The text tool presses into boxes like into a text field (R-TEXT-005); selection
+        // handles (corners, width bar) still resize a selected box.
+        PenEventKind::Down
+            if e.tool == PenTool::Pen
+                && (mouse || s.barrel(s.live.button).is_none())
+                && s.settings.tool == vibenote_model::settings::ToolKind::Text
+                && !matches!(
+                    s.handle_at(s.view.to_canvas(e.x, e.y)),
+                    Some(crate::Handle::Scale(_) | crate::Handle::Width | crate::Handle::Rotate)
+                )
+                && text_press(s, e, mouse, out) => {}
+        PenEventKind::Motion if s.live.text_drag.is_some_and(|(_, m)| m == mouse) => {
+            let at = s.view.to_canvas(e.x, e.y);
+            super::text::drag_to(s, at);
+            s.live.hover = Some(at);
+        }
+        PenEventKind::Up if s.live.text_drag.is_some_and(|(_, m)| m == mouse) => {
+            s.live.text_drag = None;
+        }
+        // The ruler: its body moves it, its knob rotates it (R-RULER-001).
+        PenEventKind::Down
+            if e.tool == PenTool::Pen
+                && (mouse || s.barrel(s.live.button).is_none())
+                && let Some(part) = s.ruler.part_at(s.view.to_canvas(e.x, e.y), s.zoom()) =>
+        {
+            finish(s, out);
+            s.live.ruler_drag = Some(super::shape::RulerDrag {
+                part,
+                start: s.view.to_canvas(e.x, e.y),
+                ruler: s.ruler,
+                mouse,
+            });
+        }
+        PenEventKind::Motion if s.live.ruler_drag.is_some_and(|d| d.mouse == mouse) => {
+            let at = s.view.to_canvas(e.x, e.y);
+            super::shape::ruler_drag_to(s, at);
+            s.live.hover = Some(at);
+        }
+        PenEventKind::Up if s.live.ruler_drag.is_some_and(|d| d.mouse == mouse) => {
+            s.live.ruler_drag = None;
         }
         PenEventKind::Down => {
             if !press_selection(s, e, mouse) {
@@ -463,6 +598,10 @@ fn step(s: &mut Session, e: &PenEvent, mouse: bool, out: &mut BatchResult) {
     }
 }
 
+/// Two presses this close in time (µs) and space (screen px) are a double click.
+const DOUBLE_CLICK_US: u64 = 400_000;
+const DOUBLE_CLICK_PX: f64 = 8.0;
+
 /// Linux codes of the mouse buttons.
 const BTN_LEFT: u32 = 0x110;
 const BTN_MIDDLE: u32 = 0x112;
@@ -491,6 +630,9 @@ struct PointerEvent {
     y: f64,
     /// Linux button code for down/up (default BTN_LEFT = 272; BTN_MIDDLE = 274 pans).
     button: Option<u32>,
+    /// Shift held (Shift+click extends a text selection).
+    #[serde(default)]
+    shift: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -502,6 +644,7 @@ struct PointerBatch {
 /// One mouse event: the left button draws like a pen tip at pressure 0.5 with the selected
 /// tool, the middle button drags the view, other buttons are ignored.
 fn pointer_step(s: &mut Session, e: &PointerEvent, out: &mut BatchResult) {
+    s.live.shift = e.shift;
     let pen = |kind| PenEvent {
         t_us: e.t_us,
         kind,

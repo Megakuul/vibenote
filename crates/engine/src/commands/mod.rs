@@ -3,16 +3,16 @@
 pub(crate) mod audio;
 mod blob;
 mod edit;
+mod finder;
 pub(crate) mod hwr;
 mod image;
 mod ink;
 pub(crate) mod input;
 pub(crate) mod keymap;
 mod link;
-pub(crate) mod markdown;
 mod order;
 pub(crate) mod pdf;
-mod quickopen;
+pub(crate) mod quickopen;
 mod search;
 pub(crate) mod selection;
 mod settings;
@@ -22,7 +22,8 @@ pub(crate) mod text;
 mod trash;
 mod ui;
 pub(crate) mod view;
-mod workspace;
+pub(crate) mod vim;
+pub(crate) mod workspace;
 
 use crate::EngineError;
 use crate::command::Registry;
@@ -43,6 +44,8 @@ pub fn register_all(r: &mut Registry) -> Result<(), EngineError> {
     view::register(r)?;
     blob::register(r)?;
     text::register(r)?;
+    vim::register(r)?;
+    finder::register(r)?;
     link::register(r)?;
     shape::register(r)?;
     image::register(r)?;

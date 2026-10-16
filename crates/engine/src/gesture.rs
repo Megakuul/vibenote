@@ -416,6 +416,24 @@ impl Session {
     }
 
     /// Starts dragging the selection if `at` (canvas) is on it.
+    /// Starts moving the selection from `at` wherever the press is (a text box's frame band).
+    pub(crate) fn begin_move(&mut self, at: (f64, f64), mouse: bool) -> bool {
+        let (Some(note), Some(rect)) = (self.selection.note, self.selection_rect()) else {
+            return false;
+        };
+        self.live.drag = Some(Drag {
+            note,
+            handle: Handle::Move,
+            mouse,
+            start: at,
+            rect,
+            xform: Xform::default(),
+            moved: false,
+            text_width: None,
+        });
+        true
+    }
+
     pub(crate) fn begin_drag(&mut self, at: (f64, f64), mouse: bool) -> bool {
         let Some(handle) = self.handle_at(at) else { return false };
         let (Some(note), Some(rect)) = (self.selection.note, self.selection_rect()) else {
@@ -514,6 +532,22 @@ impl Session {
             Some(BarrelAction::Pan) => return CursorHint::Grabbing,
             _ => {}
         }
+        // The ruler: its body moves, its knob rotates (R-RULER-001).
+        if let Some(d) = self.live.ruler_drag {
+            return match d.part {
+                crate::commands::shape::RulerPart::Body => CursorHint::Move,
+                crate::commands::shape::RulerPart::Knob => CursorHint::Rotate,
+            };
+        }
+        if self.live.stroke.is_none()
+            && let Some(at) = self.live.hover
+            && let Some(part) = self.ruler.part_at(at, self.zoom())
+        {
+            return match part {
+                crate::commands::shape::RulerPart::Body => CursorHint::Move,
+                crate::commands::shape::RulerPart::Knob => CursorHint::Rotate,
+            };
+        }
         if self.live.stroke.is_none()
             && let Some(at) = self.live.hover
             && let Some(h) = self.handle_at(at)
@@ -526,7 +560,7 @@ impl Session {
             };
         }
         match self.settings.tool {
-            ToolKind::Pen | ToolKind::Highlighter => CursorHint::Ink,
+            ToolKind::Pen | ToolKind::Highlighter | ToolKind::Cover => CursorHint::Ink,
             ToolKind::EraserStroke | ToolKind::EraserArea => CursorHint::Erase,
             ToolKind::Lasso => CursorHint::Lasso,
             ToolKind::Shape => CursorHint::Shape,

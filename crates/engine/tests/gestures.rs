@@ -444,11 +444,7 @@ fn tapping_a_box_edits_it_and_styles_toggle_on_the_selection() {
         .as_u64()
         .unwrap();
     e.execute("tool.select.text", json!({})).unwrap();
-    // The first tap selects the box (drag it, resize it), the second types into it.
-    pen(&mut e, "down", 60.0, 60.0);
-    pen(&mut e, "up", 60.0, 60.0);
-    assert!(e.session.text_edit.is_none());
-    assert_eq!(e.session.selection.ids, vec![id]);
+    // A tap types into the box at once, like into a text field (R-TEXT-005, revised).
     pen(&mut e, "down", 60.0, 60.0);
     pen(&mut e, "up", 60.0, 60.0);
     assert!(e.session.selection.ids.is_empty());
@@ -732,4 +728,52 @@ fn tidy_turns_rough_shapes_into_clean_ones_and_straightens_the_writing() {
     e.execute("selection.tidy", json!({})).unwrap();
     assert_eq!(shapes(&e, n).len(), 1);
     assert_eq!(shapes(&e, n)[0].0, vibenote_model::ShapeKind::Line);
+}
+
+#[test]
+fn text_clicks_type_at_the_click_and_double_or_triple_clicks_select() {
+    let (mut e, _) = setup();
+    let id = e
+        .execute(
+            "text.create",
+            json!({"at": [100.0, 100.0], "width": 300.0, "content": "hello big world"}),
+        )
+        .unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    e.execute("tool.select.text", json!({})).unwrap();
+    let tap = |e: &mut Engine, t: u64, x: f64| {
+        for kind in ["down", "up"] {
+            e.execute(
+                "input.pen",
+                json!({"events": [{"t_us": t, "kind": kind, "tool": "pen", "x": x, "y": 108.0, "p": 0.5}]}),
+            )
+            .unwrap();
+        }
+    };
+    // One click types into the box, the caret where clicked.
+    tap(&mut e, 1_000_000, 150.0);
+    let ed = e.session.text_edit.clone().unwrap();
+    assert_eq!((ed.id, ed.place.is_some(), ed.word), (Some(id), true, false));
+    // A slow second click moves the caret (it stays in editing).
+    tap(&mut e, 3_000_000, 160.0);
+    let ed = e.session.text_edit.clone().unwrap();
+    assert_eq!((ed.id, ed.word, ed.line), (Some(id), false, false));
+    // A double click asks for the word there; the UI places it with the layout.
+    tap(&mut e, 3_200_000, 160.0);
+    assert!(e.session.text_edit.as_ref().unwrap().word);
+    e.execute("text.caret", json!({"offset": 7, "word": true})).unwrap();
+    assert_eq!(e.session.text_edit.clone().unwrap().range(), (6, 9), "\"big\" selected");
+    // A third click the line; a fourth starts over.
+    tap(&mut e, 3_350_000, 160.0);
+    assert!(e.session.text_edit.as_ref().unwrap().line);
+    tap(&mut e, 3_500_000, 160.0);
+    let ed = e.session.text_edit.clone().unwrap();
+    assert_eq!((ed.word, ed.line), (false, false));
+    // A double click on a box that is not being edited goes straight to the word.
+    e.execute("text.end", json!({})).unwrap();
+    tap(&mut e, 5_000_000, 150.0);
+    tap(&mut e, 5_200_000, 150.0);
+    let ed = e.session.text_edit.clone().unwrap();
+    assert_eq!((ed.id, ed.word), (Some(id), true));
 }

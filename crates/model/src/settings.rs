@@ -17,6 +17,8 @@ pub enum ToolKind {
     Lasso,
     Shape,
     Text,
+    /// Covers for flashcards (R-PEN-014).
+    Cover,
 }
 
 /// What the eraser end does (R-PEN-006): whole strokes (default) or the area under it.
@@ -115,7 +117,16 @@ pub struct Settings {
     /// Rough shapes snap to clean ones as soon as the pen lifts, without holding still
     /// (R-SHAPE-002 asks for the hold; this is the owner's opt-in, default off).
     pub snap_on_lift: bool,
+    /// Vim mode (R-VIM-001): text boxes edit with vim keys and show in a monospace font;
+    /// Space is the leader key (R-VIM-004).
+    pub vim: bool,
+    /// Colours of new pen and highlighter strokes (R-PEN-013).
+    pub pen_color: crate::Color,
+    pub highlighter_color: crate::Color,
 }
+
+/// The highlighter's default colour (yellow; drawn translucent).
+pub const HIGHLIGHTER_YELLOW: crate::Color = crate::Color(0xf5c8_00ff);
 
 impl Default for Settings {
     fn default() -> Self {
@@ -130,6 +141,9 @@ impl Default for Settings {
             barrel2: BarrelAction::Eraser,
             shape: crate::ShapeKind::Rectangle,
             snap_on_lift: false,
+            vim: false,
+            pen_color: crate::Color::INK,
+            highlighter_color: HIGHLIGHTER_YELLOW,
         }
     }
 }

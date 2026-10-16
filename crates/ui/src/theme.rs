@@ -94,6 +94,10 @@ pub mod icon {
     pub const CUT: &str = "\u{e14e}";
     pub const INSERT_IMAGE: &str = "\u{e1f7}";
     pub const PASTE: &str = "\u{e3e8}";
+    pub const RULER: &str = "\u{e14b}";
+    /// The cover tool (flashcards): eye-off.
+    pub const COVER: &str = "\u{e0bb}";
+    pub const PALETTE: &str = "\u{e1dd}";
 }
 
 /// The bundled fonts (shared with the canvas text renderer) and the icons.

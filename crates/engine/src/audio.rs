@@ -4,6 +4,7 @@
 //! blocks inking.
 
 use crate::{EngineError, Session};
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -83,9 +84,43 @@ pub struct Recording {
 struct Playing {
     object: ObjectId,
     rate: u32,
+    frames: usize,
     position: Arc<AtomicUsize>,
+    /// The output stream (`None` when silent: tests).
     #[cfg(feature = "device")]
-    _stream: vibenote_audio::device::Running,
+    stream: Option<vibenote_audio::device::Running>,
+}
+
+impl Playing {
+    /// The position in ms, or `None` once the stream has played to the end.
+    fn at_ms(&self) -> Option<u64> {
+        #[cfg(feature = "device")]
+        if self
+            .stream
+            .as_ref()
+            .is_some_and(vibenote_audio::device::Running::is_finished)
+        {
+            return None;
+        }
+        let frame = self.position.load(Ordering::Acquire);
+        if frame >= self.frames {
+            return None;
+        }
+        let frame = u64::try_from(frame).unwrap_or(0);
+        Some(
+            frame
+                .saturating_mul(1000)
+                .checked_div(u64::from(self.rate))
+                .unwrap_or(0),
+        )
+    }
+}
+
+/// What a player on the canvas shows (R-AUDIO-004).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct PlayerView {
+    pub playing: bool,
+    pub position_ms: u64,
 }
 
 /// The audio state of a session (cheap to clone; clones share it, like the PDF service).
@@ -95,12 +130,57 @@ pub struct AudioService {
     playing: Shared<Option<Playing>>,
     /// The last decoded object (playback seeks without decoding again).
     decoded: Shared<Option<(ObjectId, Arc<Pcm>)>>,
+    /// A paused player and where it stopped (a tap resumes there).
+    paused: Shared<Option<(ObjectId, u64)>>,
+    /// No output device: playback only advances its state (engine tests must not make sound).
+    silent: bool,
 }
 
 impl AudioService {
     /// True while a recording runs.
     pub fn is_recording(&self) -> bool {
         self.rec.is_some()
+    }
+
+    /// When the recording in progress started (CLOCK_MONOTONIC µs).
+    pub fn recording_start_us(&self) -> Option<u64> {
+        self.rec.as_ref().map(|r| r.start_us)
+    }
+
+    /// Plays nothing aloud from now on (tests).
+    pub fn set_silent(&mut self, silent: bool) {
+        self.silent = silent;
+    }
+
+    /// True while something plays.
+    pub fn is_playing(&self) -> bool {
+        lock(&self.playing).as_ref().and_then(Playing::at_ms).is_some()
+    }
+
+    /// The state player `id` shows: playing (and where) or paused, `None` when idle.
+    pub fn player(&self, id: ObjectId) -> Option<PlayerView> {
+        if let Some(p) = lock(&self.playing).as_ref().filter(|p| p.object == id)
+            && let Some(position_ms) = p.at_ms()
+        {
+            return Some(PlayerView {
+                playing: true,
+                position_ms,
+            });
+        }
+        (*lock(&self.paused))
+            .filter(|(o, _)| *o == id)
+            .map(|(_, position_ms)| PlayerView {
+                playing: false,
+                position_ms,
+            })
+    }
+
+    /// Stops playback, remembering where (`None` if nothing played).
+    pub(crate) fn pause(&self) -> Option<(ObjectId, u64)> {
+        let p = lock(&self.playing).take()?;
+        let at = (p.object, p.at_ms().unwrap_or(0));
+        *lock(&self.paused) = Some(at);
+        Some(at)
     }
 }
 
@@ -510,21 +590,36 @@ impl Session {
         let frame = usize::try_from(position_ms.saturating_mul(u64::from(pcm.rate)) / 1000).unwrap_or(usize::MAX);
         let mut g = lock(&self.audio.playing);
         *g = None; // stops the previous playback
+        *lock(&self.audio.paused) = None;
+        let channels = usize::from(pcm.channels.max(1));
+        let frames = pcm.samples.len().checked_div(channels).unwrap_or(0);
+        let position = Arc::new(AtomicUsize::new(frame));
+        if self.audio.silent {
+            *g = Some(Playing {
+                object: id,
+                rate: pcm.rate,
+                frames,
+                position,
+                #[cfg(feature = "device")]
+                stream: None,
+            });
+            return Ok(());
+        }
         #[cfg(feature = "device")]
         {
-            let position = Arc::new(AtomicUsize::new(frame));
             let stream = vibenote_audio::device::play(Arc::clone(&pcm), frame, Arc::clone(&position)).map_err(aerr)?;
             *g = Some(Playing {
                 object: id,
                 rate: pcm.rate,
+                frames,
                 position,
-                _stream: stream,
+                stream: Some(stream),
             });
             Ok(())
         }
         #[cfg(not(feature = "device"))]
         {
-            let _ = (frame, &mut g);
+            let _ = (frames, position, &mut g);
             Err(aerr(AudioError::Device("built without audio devices".into())))
         }
     }
@@ -544,14 +639,14 @@ impl Session {
                 "live": matches!(r.kind, Kind::Live { .. }),
             })
         });
-        let play = lock(&self.audio.playing).as_ref().map(|p| {
-            let frame = u64::try_from(p.position.load(Ordering::Acquire)).unwrap_or(0);
-            serde_json::json!({
+        let play = lock(&self.audio.playing).as_ref().and_then(|p| {
+            Some(serde_json::json!({
                 "object": p.object.0,
-                "position_ms": frame.saturating_mul(1000).checked_div(u64::from(p.rate)).unwrap_or(0),
-            })
+                "position_ms": p.at_ms()?,
+            }))
         });
-        serde_json::json!({ "recording": rec, "playing": play })
+        let paused = (*lock(&self.audio.paused)).map(|(o, ms)| serde_json::json!({"object": o.0, "position_ms": ms}));
+        serde_json::json!({ "recording": rec, "playing": play, "paused": paused })
     }
 
     /// Recordings a crash left in the journal become audio objects (with a warning).

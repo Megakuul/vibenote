@@ -1,8 +1,10 @@
 //! Snap from ink (R-SHAPE-002): recognise a rough hand-drawn line, arrow, triangle, rectangle
 //! or ellipse. Conservative: anything unclear is not a shape (the ink stays as it is).
 //!
-//! The path is simplified (Douglas–Peucker with a tolerance relative to its size); the
-//! remaining corners decide the class: an open path with no inner corner is a line; shaft,
+//! An open path that stays close to its best-fit line (small hooks at the ends and a slight bow
+//! allowed) is a line, levelled exactly when it is within a few degrees of horizontal or
+//! vertical. Otherwise the path is simplified (Douglas–Peucker with a tolerance relative to its
+//! size) and the remaining corners decide the class: shaft,
 //! tip, barb, back to the tip, barb is an arrow; a closed path with 3 corners is a triangle,
 //! 4 roughly right-angled corners a rectangle; a closed path that stays close to the ellipse
 //! of its bounding box is an ellipse.
@@ -79,6 +81,94 @@ fn angle_at(a: Point, b: Point, c: Point) -> f64 {
     ((u.0 * v.0 + u.1 * v.1) / d).clamp(-1.0, 1.0).acos().to_degrees()
 }
 
+/// Share of the path length at each end left out when judging straightness (hooks where the
+/// pen lands and lifts).
+const HOOK_SHARE: f64 = 0.08;
+/// Most distance of the path from its best-fit line, relative to the line's length.
+const LINE_DEVIATION: f64 = 0.06;
+/// A line within this angle (degrees) of horizontal or vertical is levelled exactly.
+const LEVEL_DEG: f64 = 6.0;
+
+/// The points of a path between `from` and `to` (shares of its length).
+fn between(points: &[Point], length: f64, from: f64, to: f64) -> Vec<Point> {
+    let mut out = Vec::new();
+    let mut walked = 0.0;
+    let mut prev: Option<Point> = None;
+    for p in points {
+        if let Some(q) = prev {
+            walked += dist(q, *p);
+        }
+        prev = Some(*p);
+        let share = if length > 0.0 { walked / length } else { 0.0 };
+        if (from..=to).contains(&share) {
+            out.push(*p);
+        }
+    }
+    out
+}
+
+/// The straight line a path looks like: its best fit (principal axis), spanning the path's
+/// extent along it, levelled near the axes. `None` if the path strays from it.
+fn fit_line(points: &[Point], length: f64) -> Option<Snapped> {
+    let mut core = between(points, length, HOOK_SHARE, 1.0 - HOOK_SHARE);
+    // A sparse path (a few samples) has no hooks to leave out.
+    if core.len() < 2 {
+        core = points.to_vec();
+    }
+    #[allow(clippy::cast_precision_loss)] // a point count
+    let n = points.len() as f64;
+    let (mx, my) = (
+        points.iter().map(|p| p.x).sum::<f64>() / n,
+        points.iter().map(|p| p.y).sum::<f64>() / n,
+    );
+    let (mut sxx, mut syy, mut sxy) = (0.0, 0.0, 0.0);
+    for p in points {
+        let (dx, dy) = (p.x - mx, p.y - my);
+        sxx += dx * dx;
+        syy += dy * dy;
+        sxy += dx * dy;
+    }
+    let theta = 0.5 * (2.0 * sxy).atan2(sxx - syy);
+    let (ux, uy) = (theta.cos(), theta.sin());
+    let along = |p: &Point| (p.x - mx) * ux + (p.y - my) * uy;
+    let across = |p: &Point| (-(p.x - mx) * uy + (p.y - my) * ux).abs();
+    let (t0, t1) = points
+        .iter()
+        .map(along)
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), t| (a.min(t), b.max(t)));
+    let span = t1 - t0;
+    if !(span.is_finite() && span > 0.0) {
+        return None;
+    }
+    // The core stays near the line, and the path does not double back (a "V" or a zigzag).
+    if core.iter().map(across).fold(0.0f64, f64::max) > LINE_DEVIATION * span || length > 1.25 * span {
+        return None;
+    }
+    let (mut a, mut b) = (
+        Point::new(mx + ux * t0, my + uy * t0),
+        Point::new(mx + ux * t1, my + uy * t1),
+    );
+    // In drawing order.
+    let (first, last) = (*points.first()?, *points.last()?);
+    if dist(first, a) + dist(last, b) > dist(first, b) + dist(last, a) {
+        std::mem::swap(&mut a, &mut b);
+    }
+    let deg = theta.to_degrees().rem_euclid(180.0);
+    let (cx, cy) = ((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
+    if deg.min(180.0 - deg) <= LEVEL_DEG {
+        a.y = cy;
+        b.y = cy;
+    } else if (deg - 90.0).abs() <= LEVEL_DEG {
+        a.x = cx;
+        b.x = cx;
+    }
+    Some(Snapped {
+        kind: ShapeKind::Line,
+        points: vec![a, b],
+        closed: false,
+    })
+}
+
 /// Recognises a shape in a stroke's points, or `None`.
 pub fn classify(points: &[Point]) -> Option<Snapped> {
     if points.len() < 2 || points.len() > 100_000 || !points.iter().all(|p| p.x.is_finite() && p.y.is_finite()) {
@@ -102,14 +192,10 @@ pub fn classify(points: &[Point]) -> Option<Snapped> {
     let (first, last) = (*points.first()?, *points.last()?);
     let closed = dist(first, last) < 0.12 * length.max(1e-9);
     if !closed {
-        let s = simplify(points, 0.05 * diag);
-        if s.len() == 2 {
-            return Some(Snapped {
-                kind: ShapeKind::Line,
-                points: vec![first, last],
-                closed: false,
-            });
+        if let Some(line) = fit_line(points, length) {
+            return Some(line);
         }
+        let s = simplify(points, 0.05 * diag);
         // Arrow drawn in one stroke: tail → tip → barb → tip → barb.
         if s.len() == 5 {
             let (t, tip, b1, back, b2) = (s.first()?, s.get(1)?, s.get(2)?, s.get(3)?, s.get(4)?);
@@ -167,9 +253,21 @@ pub fn classify(points: &[Point]) -> Option<Snapped> {
             .to_degrees()
             .rem_euclid(90.0);
         if !(15.0..=75.0).contains(&side) {
+            // Each side where its two corners are on average (overshoot at a corner does not
+            // grow the box).
+            let mut xs: Vec<f64> = s.iter().map(|p| p.x).collect();
+            let mut ys: Vec<f64> = s.iter().map(|p| p.y).collect();
+            xs.sort_by(f64::total_cmp);
+            ys.sort_by(f64::total_cmp);
+            let mean = |v: &[f64], i: usize| {
+                (v.get(i).copied().unwrap_or(0.0) + v.get(i.saturating_add(1)).copied().unwrap_or(0.0)) / 2.0
+            };
             return Some(Snapped {
                 kind: ShapeKind::Rectangle,
-                points: vec![Point::new(x0, y0), Point::new(x1, y1)],
+                points: vec![
+                    Point::new(mean(&xs, 0), mean(&ys, 0)),
+                    Point::new(mean(&xs, 2), mean(&ys, 2)),
+                ],
                 closed: true,
             });
         }
@@ -182,14 +280,25 @@ pub fn classify(points: &[Point]) -> Option<Snapped> {
     // Ellipse: every point near the bounding-box ellipse.
     let (cx, cy, rx, ry) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (x1 - x0) / 2.0, (y1 - y0) / 2.0);
     if rx > 1.0 && ry > 1.0 {
-        let worst = points
+        let mut off: Vec<f64> = points
             .iter()
             .map(|p| (((p.x - cx) / rx).hypot((p.y - cy) / ry) - 1.0).abs())
-            .fold(0.0f64, f64::max);
-        if worst < 0.2 {
+            .collect();
+        off.sort_by(f64::total_cmp);
+        let worst = off.last().copied().unwrap_or(f64::INFINITY);
+        // Most of the path near the ellipse; a small overshoot where it closes is allowed.
+        let most = off.get(off.len().saturating_mul(9) / 10).copied().unwrap_or(worst);
+        if most < 0.18 && worst < 0.35 {
+            // Nearly round: a circle.
+            let (rx, ry) = if (rx - ry).abs() < 0.1 * rx.max(ry) {
+                let r = (rx + ry) / 2.0;
+                (r, r)
+            } else {
+                (rx, ry)
+            };
             return Some(Snapped {
                 kind: ShapeKind::Ellipse,
-                points: vec![Point::new(x0, y0), Point::new(x1, y1)],
+                points: vec![Point::new(cx - rx, cy - ry), Point::new(cx + rx, cy + ry)],
                 closed: true,
             });
         }
@@ -285,8 +394,91 @@ mod tests {
         assert!(f64::from(right) >= 0.95 * f64::from(total), "{right}/{total}");
     }
 
+    /// Straightening: hooks at the ends and a slight bow still make a line; it spans the
+    /// stroke, keeps its direction, and is levelled near the axes.
+    #[test]
+    fn rough_lines_are_straightened_well() {
+        let line = |pts: &[Point]| {
+            let s = classify(pts).expect("a line");
+            assert_eq!(s.kind, ShapeKind::Line, "{pts:?}");
+            (s.points[0], s.points[1])
+        };
+        // A bowed line (bulge 4 % of its length) with a hook where the pen lifted.
+        let mut bowed: Vec<Point> = (0..=60)
+            .map(|k| {
+                let t = f64::from(k) / 60.0;
+                Point::new(300.0 * t, 120.0 * t + 12.0 * (t * std::f64::consts::PI).sin())
+            })
+            .collect();
+        bowed.extend([Point::new(296.0, 126.0), Point::new(292.0, 128.0)]);
+        let (a, b) = line(&bowed);
+        assert!(
+            dist(a, Point::new(0.0, 0.0)) < 15.0 && dist(b, Point::new(300.0, 120.0)) < 15.0,
+            "{a:?} {b:?}"
+        );
+        // Drawn right to left: the direction is kept.
+        let back: Vec<Point> = bowed.iter().rev().copied().collect();
+        let (a2, _) = line(&back);
+        assert!(a2.x > 250.0, "{a2:?}");
+        // 3° off horizontal: exactly horizontal; 4° off vertical: exactly vertical.
+        let tilted = |deg: f64| -> Vec<Point> {
+            let r = deg.to_radians();
+            (0..=40)
+                .map(|k| {
+                    let t = f64::from(k) * 5.0;
+                    Point::new(t * r.cos() + (f64::from(k) * 1.7).sin(), t * r.sin())
+                })
+                .collect()
+        };
+        let (a, b) = line(&tilted(3.0));
+        assert!((a.y - b.y).abs() < 1e-9 && (b.x - a.x) > 190.0, "{a:?} {b:?}");
+        let (a, b) = line(&tilted(94.0));
+        assert!((a.x - b.x).abs() < 1e-9, "{a:?} {b:?}");
+        // 30° stays 30°.
+        let (a, b) = line(&tilted(30.0));
+        let deg = (b.y - a.y).atan2(b.x - a.x).to_degrees();
+        assert!((deg - 30.0).abs() < 2.0, "{deg}");
+    }
+
+    #[test]
+    fn rectangles_ignore_corner_overshoot_and_round_ellipses_are_circles() {
+        // Overshoot of 12 px past two corners.
+        let r = classify(&wobble(
+            &[
+                (0.0, 0.0),
+                (212.0, 0.0),
+                (200.0, 0.0),
+                (200.0, 120.0),
+                (0.0, 132.0),
+                (0.0, 120.0),
+                (0.0, 0.0),
+            ],
+            15,
+            1.0,
+            3,
+        ));
+        let r = r.unwrap();
+        assert_eq!((r.kind, r.points.len()), (ShapeKind::Rectangle, 2), "{r:?}");
+        assert!(r.points[1].x < 210.0 && r.points[1].y < 130.0, "{r:?}");
+        let circle: Vec<Point> = (0..=80)
+            .map(|k| {
+                let t = f64::from(k) / 80.0 * std::f64::consts::TAU;
+                Point::new(100.0 + 95.0 * t.cos(), 100.0 + 100.0 * t.sin())
+            })
+            .collect();
+        let c = classify(&circle).unwrap();
+        assert_eq!(c.kind, ShapeKind::Ellipse);
+        let (w, h) = (c.points[1].x - c.points[0].x, c.points[1].y - c.points[0].y);
+        assert!((w - h).abs() < 1e-9, "{w} {h}");
+    }
+
     #[test]
     fn scribbles_and_writing_are_not_shapes() {
+        // A "V" and an "L" are not lines.
+        let v = [(0.0, 0.0), (50.0, 150.0), (100.0, 0.0)];
+        assert_ne!(classify(&wobble(&v, 30, 1.0, 1)).map(|s| s.kind), Some(ShapeKind::Line));
+        let l = [(0.0, 0.0), (0.0, 150.0), (100.0, 150.0)];
+        assert_ne!(classify(&wobble(&l, 30, 1.0, 1)).map(|s| s.kind), Some(ShapeKind::Line));
         let zigzag: Vec<Point> = (0..60)
             .map(|k| Point::new(f64::from(k) * 5.0, if k % 2 == 0 { 0.0 } else { 40.0 }))
             .collect();
@@ -299,5 +491,8 @@ mod tests {
             .collect();
         assert_eq!(classify(&loops), None);
         assert_eq!(classify(&[Point::new(0.0, 0.0), Point::new(1.0, 1.0)]), None, "a dot");
+        // Few samples: still a line.
+        let three = [Point::new(0.0, 0.0), Point::new(20.0, 0.5), Point::new(40.0, 0.0)];
+        assert_eq!(classify(&three).map(|s| s.kind), Some(ShapeKind::Line));
     }
 }

@@ -379,6 +379,8 @@ pub(crate) struct State {
     /// Display transforms of strokes (prettify, ADR 0008): affine `[a, b, c, d, e, f]` mapping
     /// (x, y) to (a·x + c·y + e, b·x + d·y + f). The model's samples never change.
     pub display: HashMap<ObjectId, [f64; 6]>,
+    /// Covers shown revealed (R-PEN-014): drawn faint instead of opaque.
+    pub revealed: std::collections::HashSet<ObjectId>,
     edit_set: std::collections::HashSet<ObjectId>,
     pub frame: u64,
     /// Something drawn changed since the renderer last took this flag (cached frames are
@@ -393,6 +395,7 @@ impl State {
     pub fn new() -> State {
         State {
             display: HashMap::new(),
+            revealed: std::collections::HashSet::new(),
             sync: Sync::None,
             records: HashMap::new(),
             chunks: HashMap::new(),
@@ -411,10 +414,12 @@ impl State {
     pub fn clear(&mut self) {
         let next_gen = self.lod.next_gen;
         let display = std::mem::take(&mut self.display);
+        let revealed = std::mem::take(&mut self.revealed);
         *self = State {
             frame: self.frame,
             pass: self.pass,
             display,
+            revealed,
             ..State::new()
         };
         // Generations keep counting: results of dropped batches must never match new ones.
@@ -438,6 +443,26 @@ impl State {
             return false;
         }
         self.display = display;
+        for id in changed {
+            if self.edit_set.insert(id) {
+                self.edits.push_back(id);
+            }
+        }
+        self.dirty = true;
+        true
+    }
+
+    /// Replaces the revealed covers; like [`State::set_display`], only the changed ones are
+    /// re-encoded. Returns false if the state must start over instead.
+    pub fn set_revealed(&mut self, revealed: std::collections::HashSet<ObjectId>) -> bool {
+        if !matches!(self.sync, Sync::Tracked { .. }) {
+            return false;
+        }
+        let changed: Vec<ObjectId> = revealed.symmetric_difference(&self.revealed).copied().collect();
+        if changed.len() > MAX_DISPLAY_EDITS {
+            return false;
+        }
+        self.revealed = revealed;
         for id in changed {
             if self.edit_set.insert(id) {
                 self.edits.push_back(id);
@@ -705,7 +730,7 @@ impl State {
             return Ok(0);
         };
         // A stroke beyond the hostile-input bounds is not drawn (never a crash).
-        let s = &*shown(&self.display, o.id, s);
+        let s = &*shown(&self.display, &self.revealed, o.id, s);
         let enc = encode::encode(s).unwrap_or_else(|_| Encoded {
             color: 0,
             r_max: 0.0,
@@ -798,7 +823,7 @@ impl State {
                 continue;
             }
             let ObjectKind::Stroke(s) = &o.kind else { continue };
-            let s = &*shown(&self.display, id, s);
+            let s = &*shown(&self.display, &self.revealed, id, s);
             let Ok(enc) = encode::encode(s) else { continue };
             n = n.saturating_add(u64::try_from(s.samples.len()).unwrap_or(u64::MAX));
             let Some(chunk) = self.chunks.get_mut(&cell) else { break };
@@ -1150,12 +1175,22 @@ fn upload_batch(
     used
 }
 
-/// A stroke as displayed: its display transform applied, if it has one.
+/// Colour of a revealed cover: a light tint in the highlighter layer, so what it covers shows.
+const REVEALED_COVER: vibenote_model::Color = vibenote_model::Color(0xc3cd_dcff);
+
+/// A stroke as displayed: its display transform applied, if it has one; a revealed cover faint.
 fn shown<'a>(
     display: &HashMap<ObjectId, [f64; 6]>,
+    revealed: &std::collections::HashSet<ObjectId>,
     id: ObjectId,
     s: &'a vibenote_model::Stroke,
 ) -> std::borrow::Cow<'a, vibenote_model::Stroke> {
+    if s.tool == vibenote_model::Tool::Cover && revealed.contains(&id) {
+        let mut t = shown(display, &std::collections::HashSet::new(), id, s).into_owned();
+        t.tool = vibenote_model::Tool::Highlighter;
+        t.color = REVEALED_COVER;
+        return std::borrow::Cow::Owned(t);
+    }
     match display.get(&id) {
         Some(&[a, b, c, d, e, f]) => {
             let mut t = s.clone();

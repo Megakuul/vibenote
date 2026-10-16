@@ -626,6 +626,11 @@ impl Store {
     }
 
     /// Link objects (see [`search::links`]).
+    /// Every typed-text and handwriting row (see [`search::written`]).
+    pub fn written(&self, limit: usize) -> Result<Vec<search::SearchRow>, StorageError> {
+        search::written(&self.conn, limit)
+    }
+
     pub fn search_links(&self, only: Option<NoteId>) -> Result<Vec<search::LinkRow>, StorageError> {
         search::links(&self.conn, only)
     }
@@ -809,6 +814,15 @@ fn settings_lenient(json: &str) -> (Settings, Vec<String>) {
     field(&m, "barrel2", &mut st.barrel2, &mut bad, "barrel2");
     field(&m, "shape", &mut st.shape, &mut bad, "shape");
     field(&m, "snap_on_lift", &mut st.snap_on_lift, &mut bad, "snap_on_lift");
+    field(&m, "vim", &mut st.vim, &mut bad, "vim");
+    field(&m, "pen_color", &mut st.pen_color, &mut bad, "pen_color");
+    field(
+        &m,
+        "highlighter_color",
+        &mut st.highlighter_color,
+        &mut bad,
+        "highlighter_color",
+    );
     match m.get("background") {
         Some(Value::Object(b)) => {
             field(b, "kind", &mut st.background.kind, &mut bad, "background.kind");

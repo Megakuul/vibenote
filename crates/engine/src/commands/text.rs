@@ -16,9 +16,6 @@ struct CreateP {
     width: f64,
     #[serde(default)]
     content: String,
-    /// `content` is markdown (headings, lists, checkboxes, bold, italic, strike): formatted.
-    #[serde(default)]
-    markdown: bool,
     /// Font size (canvas units per em, default 16).
     size: Option<f32>,
     note: Option<u64>,
@@ -87,6 +84,8 @@ struct TextOut {
     origin: Point,
     width: f64,
     size: f32,
+    /// The box as laid out: [x0, y0, x1, y1] (R-TEXT-004).
+    frame: Option<[f64; 4]>,
 }
 
 /// Where offset `x` goes when `[a, b)` is deleted.
@@ -241,7 +240,7 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "text.create",
-            doc: "Create a text box at a canvas point with a wrap width (one undo step); `markdown: true` formats markdown content (headings, lists, checkboxes, bold, italic, strike).",
+            doc: "Create a text box at a canvas point with a wrap width (one undo step).",
             reqs: &["R-TEXT-001", "R-TEXT-003", "R-CANVAS-003"],
             implemented: true,
         },
@@ -249,20 +248,14 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
             let note = super::ink::target_note(s, p.note)?;
             let z = s.next_z(note)?;
             let id = ObjectId(s.ws.alloc_id()?);
-            let (content, mut marks) = if p.markdown {
-                super::markdown::parse(&p.content)
-            } else {
-                (p.content, Vec::new())
-            };
-            normalise(&mut marks);
             let object = CanvasObject {
                 id,
                 z,
                 kind: ObjectKind::Text {
                     origin: Point::new(p.at[0], p.at[1]),
                     width: p.width,
-                    content,
-                    marks,
+                    content: p.content,
+                    marks: Vec::new(),
                     size: p.size.unwrap_or_else(vibenote_model::default_text_size),
                 },
             };
@@ -320,12 +313,13 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "text.get",
-            doc: "A text box's content, formatting, position, wrap width and size.",
+            doc: "A text box's content, formatting, position, wrap width, size and laid-out frame.",
             reqs: &["R-TEXT-001", "R-TEXT-002"],
             implemented: true,
         },
         |s: &mut Session, p: GetP| {
             let (_, o) = text_object(s, p.note, p.id)?;
+            let frame = s.object_box(&o).map(|b| [b.min.x, b.min.y, b.max.x, b.max.y]);
             let ObjectKind::Text {
                 origin,
                 width,
@@ -342,6 +336,7 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
                 origin,
                 width,
                 size,
+                frame,
             })
         },
     )))?;
@@ -364,14 +359,21 @@ pub struct TextEdit {
     /// A tap in the box the UI places the caret for with the real layout (`text.caret`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub place: Option<(f64, f64)>,
-    /// Paragraph styles the next typed text gets: a markdown prefix on an empty line (`# `,
-    /// `- `) or Enter in a list. Moving the caret drops them.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub pending: Vec<TextStyle>,
-    /// The caret is right after a span markdown just formatted (`**bold**`): typing goes on
-    /// unformatted instead of continuing it.
+    /// With `place`: select the word there (a double click).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub plain: bool,
+    pub word: bool,
+    /// With `place`: select the line there (a triple click).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub line: bool,
+    /// With `place`: where a drag started (it selects from there to `place`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub place_from: Option<(f64, f64)>,
+    /// With `place`: keep the selection's other end (Shift+click).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub extend: bool,
+    /// Vim mode state (R-VIM-001); `None` without vim mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vim: Option<super::vim::VimState>,
 }
 
 impl TextEdit {
@@ -381,13 +383,13 @@ impl TextEdit {
 }
 
 /// On-screen width of a new text box (px) and its font size (px per em).
-const NEW_BOX_PX: f64 = 360.0;
+const NEW_BOX_PX: f64 = 600.0;
 
 /// A tap with the text tool at `at` (canvas): selects the text box there (topmost; tapping it
 /// again types into it, dragging moves it), or starts a new box; ends the previous edit.
 pub(crate) fn tap(s: &mut Session, note: vibenote_model::NoteId, at: (f64, f64)) -> Result<(), EngineError> {
-    end(s)?;
     let p = Point::new(at.0, at.1);
+    let double = s.live.double;
     let canvas = s.ws.canvas(note)?;
     let hit = canvas
         .objects
@@ -396,6 +398,24 @@ pub(crate) fn tap(s: &mut Session, note: vibenote_model::NoteId, at: (f64, f64))
         .filter(|o| s.object_box(o).is_some_and(|b| b.inflate(4.0 / s.zoom()).contains(p)))
         .max_by_key(|o| (o.z, o.id))
         .map(|o| o.id.0);
+    // In the box being typed into, a click moves the caret and a double click selects the
+    // word (like any text field).
+    if let Some(ed) = s.text_edit.as_mut()
+        && ed.note == note
+        && ed.id.is_some()
+        && ed.id == hit
+    {
+        ed.place = Some(at);
+        ed.word = double;
+        s.coalesce = None;
+        return Ok(());
+    }
+    end(s)?;
+    if let Some(id) = hit
+        && double
+    {
+        return edit(s, note, id, at, true);
+    }
     if let Some(id) = hit {
         s.selection = crate::Selection {
             note: Some(note),
@@ -416,15 +436,125 @@ pub(crate) fn tap(s: &mut Session, note: vibenote_model::NoteId, at: (f64, f64))
         caret: 0,
         anchor: 0,
         place: None,
-        pending: Vec::new(),
-        plain: false,
+        word: false,
+        line: false,
+        place_from: None,
+        extend: false,
+        // A new box has nothing to move around in: typing starts right away.
+        vim: s
+            .settings
+            .vim
+            .then(|| super::vim::VimState::new(super::vim::VimMode::Insert)),
     });
     Ok(())
 }
 
+/// A press is this close to the box being edited (screen px) but outside its text: it grabs
+/// the frame to move the box (R-TEXT-005).
+const FRAME_BAND_PX: f64 = 8.0;
+
+/// What a press with the text tool did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Press {
+    /// Not on a text box.
+    Missed,
+    /// Into a box's text: the caret goes there, a drag selects.
+    Text,
+    /// On the frame of the box being edited: dragging moves it.
+    Frame,
+}
+
+/// The text area of a box's frame (a vim-mode frame has padding around it).
+fn text_area(s: &Session, fr: vibenote_geom::Rect, size: f32) -> vibenote_geom::Rect {
+    if s.settings.vim {
+        let pad = crate::vim_pad(size);
+        vibenote_geom::Rect {
+            min: Point::new(fr.min.x + pad, fr.min.y + pad),
+            max: Point::new(fr.max.x - pad, fr.max.y - pad),
+        }
+    } else {
+        fr
+    }
+}
+
+/// A press at `at` with the text tool (or a mouse click with an ink tool): like an ordinary
+/// text field (R-TEXT-005). Into a box's text it starts editing with the caret there (a
+/// double press selects the word, a triple press the line; `extend` keeps the selection's
+/// other end); on the frame band of the box being edited it starts moving the box.
+pub(crate) fn press(
+    s: &mut Session,
+    note: vibenote_model::NoteId,
+    at: (f64, f64),
+    extend: bool,
+    mouse: bool,
+) -> Result<Press, EngineError> {
+    let p = Point::new(at.0, at.1);
+    let band = FRAME_BAND_PX / s.zoom();
+    let editing = s.text_edit.as_ref().filter(|e| e.note == note).and_then(|e| e.id);
+    let canvas = s.ws.canvas(note)?;
+    if let Some(id) = editing
+        && let Some(o) = canvas.objects.get(&ObjectId(id))
+        && let ObjectKind::Text { size, .. } = o.kind
+        && let Some(fr) = s.object_box(o)
+        && fr.inflate(band).contains(p)
+        && !text_area(s, fr, size).contains(p)
+    {
+        s.selection = crate::Selection {
+            note: Some(note),
+            ids: vec![id],
+            last: None,
+        };
+        return Ok(if s.begin_move(at, mouse) {
+            Press::Frame
+        } else {
+            Press::Missed
+        });
+    }
+    let hit = canvas
+        .objects
+        .values()
+        .filter(|o| matches!(o.kind, ObjectKind::Text { .. }))
+        .filter(|o| s.object_box(o).is_some_and(|b| b.inflate(4.0 / s.zoom()).contains(p)))
+        .max_by_key(|o| (o.z, o.id))
+        .map(|o| o.id.0);
+    let Some(id) = hit else { return Ok(Press::Missed) };
+    let clicks = s.live.clicks;
+    if editing != Some(id) {
+        edit(s, note, id, at, false)?;
+    }
+    if let Some(ed) = s.text_edit.as_mut() {
+        ed.place = Some(at);
+        ed.word = clicks == 2;
+        ed.line = clicks >= 3;
+        ed.place_from = None;
+        ed.extend = extend && editing == Some(id);
+    }
+    s.selection = crate::Selection::default();
+    s.live.text_drag = Some((at, mouse));
+    s.coalesce = None;
+    Ok(Press::Text)
+}
+
+/// The pointer moved while pressing into a box's text: the selection follows it.
+pub(crate) fn drag_to(s: &mut Session, at: (f64, f64)) {
+    let Some((from, _)) = s.live.text_drag else { return };
+    if let Some(ed) = s.text_edit.as_mut() {
+        ed.place_from = Some(from);
+        ed.place = Some(at);
+        ed.word = false;
+        ed.line = false;
+    }
+}
+
 /// Starts typing into text box `id` with the caret at canvas point `at` (the UI places it with
 /// the layout); the box stops being selected.
-pub(crate) fn edit(s: &mut Session, note: vibenote_model::NoteId, id: u64, at: (f64, f64)) -> Result<(), EngineError> {
+pub(crate) fn edit(
+    s: &mut Session,
+    note: vibenote_model::NoteId,
+    id: u64,
+    at: (f64, f64),
+    word: bool,
+) -> Result<(), EngineError> {
     end(s)?;
     let o = super::pdf::object(s, note, id)?;
     let ObjectKind::Text {
@@ -448,9 +578,42 @@ pub(crate) fn edit(s: &mut Session, note: vibenote_model::NoteId, id: u64, at: (
         caret: end,
         anchor: end,
         place: Some(at),
-        pending: Vec::new(),
-        plain: false,
+        word,
+        line: false,
+        place_from: None,
+        extend: false,
+        vim: s
+            .settings
+            .vim
+            .then(|| super::vim::VimState::new(super::vim::VimMode::Normal)),
     });
+    Ok(())
+}
+
+/// Starts typing into text box `id` with the caret at character `offset` (the finder, a
+/// keyboard jump); vim mode starts in Normal mode on that character.
+pub(crate) fn open_at(s: &mut Session, note: vibenote_model::NoteId, id: u64, offset: u32) -> Result<(), EngineError> {
+    edit(s, note, id, (0.0, 0.0), false)?;
+    let len = u32::try_from(
+        content_of(
+            edited(
+                s,
+                s.text_edit
+                    .as_ref()
+                    .ok_or_else(|| EngineError::Internal("no edit".into()))?,
+            )
+            .as_ref(),
+        )
+        .chars()
+        .count(),
+    )
+    .unwrap_or(u32::MAX);
+    if let Some(ed) = s.text_edit.as_mut() {
+        ed.place = None;
+        let max = if ed.vim.is_some() { len.saturating_sub(1) } else { len };
+        ed.caret = offset.min(max);
+        ed.anchor = ed.caret;
+    }
     Ok(())
 }
 
@@ -492,13 +655,13 @@ pub(crate) fn end(s: &mut Session) -> Result<(), EngineError> {
 }
 
 /// The edited box's content, or `None` if there is none (yet, or any more).
-fn edited(s: &Session, ed: &TextEdit) -> Option<CanvasObject> {
+pub(crate) fn edited(s: &Session, ed: &TextEdit) -> Option<CanvasObject> {
     let id = ed.id?;
     let o = s.ws.canvas(ed.note).ok()?.objects.get(&ObjectId(id))?.clone();
     matches!(o.kind, ObjectKind::Text { .. }).then_some(o)
 }
 
-fn content_of(o: Option<&CanvasObject>) -> &str {
+pub(crate) fn content_of(o: Option<&CanvasObject>) -> &str {
     match o.map(|o| &o.kind) {
         Some(ObjectKind::Text { content, .. }) => content,
         _ => "",
@@ -506,7 +669,7 @@ fn content_of(o: Option<&CanvasObject>) -> &str {
 }
 
 /// Replaces the selection by `text` (typing, Enter, Backspace with a selection).
-fn type_text(s: &mut Session, mut ed: TextEdit, text: &str) -> Result<TextEdit, EngineError> {
+pub(crate) fn type_text(s: &mut Session, mut ed: TextEdit, text: &str) -> Result<TextEdit, EngineError> {
     let (a, b) = ed.range();
     let k = u32::try_from(text.chars().count()).map_err(|_| EngineError::Model("text too long".into()))?;
     match edited(s, &ed) {
@@ -523,29 +686,14 @@ fn type_text(s: &mut Session, mut ed: TextEdit, text: &str) -> Result<TextEdit, 
                 (!text.is_empty()).then_some(text),
                 Some(a),
             )?;
-            // Typed text continues the formatting it follows; a new line takes its paragraph
-            // style only from `pending` (a list goes on, a heading does not).
-            let mut caret = a.saturating_add(k);
+            // Typed text continues the formatting it follows.
             if k > 0 {
-                let line_start = a == 0 || content.chars().nth(char_index(a.saturating_sub(1))) == Some('\n');
                 for m in marks.iter_mut() {
-                    let para = m.style.is_paragraph();
-                    if m.end == a && m.start < a && !(para && line_start) && !(ed.plain && !para) {
+                    if m.end == a && m.start < a {
                         m.end = m.end.saturating_add(k);
                     }
                 }
-                for st in ed.pending.drain(..) {
-                    marks.push(TextMark {
-                        start: a,
-                        end: a.saturating_add(k),
-                        style: st,
-                    });
-                }
-                ed.plain = false;
                 normalise(marks);
-                if k == 1 && a == b {
-                    caret = markdown_shortcut(content, marks, &mut ed, caret)?;
-                }
             }
             let id = o.id.0;
             s.commit_typing(
@@ -556,7 +704,7 @@ fn type_text(s: &mut Session, mut ed: TextEdit, text: &str) -> Result<TextEdit, 
                     after: o,
                 }],
             )?;
-            ed.caret = caret;
+            ed.caret = a.saturating_add(k);
         }
         None if !text.is_empty() => {
             let z = s.next_z(ed.note)?;
@@ -582,78 +730,44 @@ fn type_text(s: &mut Session, mut ed: TextEdit, text: &str) -> Result<TextEdit, 
     Ok(ed)
 }
 
-fn char_index(c: u32) -> usize {
-    usize::try_from(c).unwrap_or(usize::MAX)
+/// The word (letters, digits, `_`) at or just before character offset `c`, as `[start, end)`;
+/// on anything else just that character.
+fn word_at(t: &str, c: u32) -> (u32, u32) {
+    let chars: Vec<char> = t.chars().collect();
+    let is_word = |i: usize| chars.get(i).is_some_and(|ch| ch.is_alphanumeric() || *ch == '_');
+    let mut i = usize::try_from(c).unwrap_or(usize::MAX).min(chars.len());
+    if !is_word(i) && i > 0 && is_word(i.saturating_sub(1)) {
+        i = i.saturating_sub(1);
+    }
+    let to = |x: usize| u32::try_from(x).unwrap_or(u32::MAX);
+    if !is_word(i) {
+        return (to(i), to(i.saturating_add(1).min(chars.len())));
+    }
+    let mut a = i;
+    while a > 0 && is_word(a.saturating_sub(1)) {
+        a = a.saturating_sub(1);
+    }
+    let mut b = i;
+    while is_word(b) {
+        b = b.saturating_add(1);
+    }
+    (to(a), to(b))
 }
 
-/// Applies the markdown shortcut the character just typed before `caret` completes (see
-/// [`super::markdown`]); returns where the caret is afterwards.
-fn markdown_shortcut(
-    content: &mut String,
-    marks: &mut Vec<TextMark>,
-    ed: &mut TextEdit,
-    caret: u32,
-) -> Result<u32, EngineError> {
-    let chars: Vec<char> = content.chars().collect();
-    let c = char_index(caret);
-    let ls = chars
-        .get(..c)
+/// The line at character `c`: `[start, end)` without its line break.
+fn line_at(t: &str, c: u32) -> (u32, u32) {
+    let chars: Vec<char> = t.chars().collect();
+    let i = usize::try_from(c).unwrap_or(usize::MAX).min(chars.len());
+    let a = chars
+        .get(..i)
         .and_then(|h| h.iter().rposition(|x| *x == '\n'))
-        .map_or(0, |i| i.saturating_add(1));
-    let le = chars
-        .get(c..)
-        .and_then(|t| t.iter().position(|x| *x == '\n'))
-        .map_or(chars.len(), |i| c.saturating_add(i));
-    let to_u32 = |x: usize| u32::try_from(x).unwrap_or(u32::MAX);
-    // A line-start prefix finished by a space: "# ", "- ", "1. ", "[ ] " …
-    if chars.get(c.saturating_sub(1)) == Some(&' ')
-        && let Some(prefix) = chars.get(ls..c.saturating_sub(1))
-        && let Some(style) = super::markdown::block_prefix(&prefix.iter().collect::<String>())
-    {
-        let (a, b) = (to_u32(ls), to_u32(c));
-        splice(content, marks, Some([a, b]), None, None)?;
-        let le = to_u32(le).saturating_sub(b.saturating_sub(a));
-        for p in [
-            TextStyle::Heading1,
-            TextStyle::Heading2,
-            TextStyle::Heading3,
-            TextStyle::BulletList,
-            TextStyle::NumberedList,
-            TextStyle::Checkbox { checked: false },
-        ] {
-            clear(marks, std::mem::discriminant(&p), a, le.max(a.saturating_add(1)));
-        }
-        if le > a {
-            marks.push(TextMark {
-                start: a,
-                end: le,
-                style,
-            });
-            normalise(marks);
-        } else {
-            ed.pending = vec![style];
-        }
-        return Ok(a);
-    }
-    // An inline span closed: "**bold**", "*italic*", "~~strike~~" …
-    let line = chars.get(ls..le).unwrap_or(&[]);
-    if let Some((o, n, styles)) = super::markdown::inline_close(line, c.saturating_sub(ls)) {
-        let (open, close, n32) = (to_u32(ls.saturating_add(o)), to_u32(c.saturating_sub(n)), to_u32(n));
-        splice(content, marks, Some([close, caret]), None, None)?;
-        splice(content, marks, Some([open, open.saturating_add(n32)]), None, None)?;
-        let end = close.saturating_sub(n32);
-        for st in styles {
-            marks.push(TextMark {
-                start: open,
-                end,
-                style: *st,
-            });
-        }
-        normalise(marks);
-        ed.plain = true;
-        return Ok(end);
-    }
-    Ok(caret)
+        .map_or(0, |k| k.saturating_add(1));
+    let b = chars
+        .get(i..)
+        .and_then(|r| r.iter().position(|x| *x == '\n'))
+        .map_or(chars.len(), |k| i.saturating_add(k));
+    let to = |x: usize| u32::try_from(x).unwrap_or(u32::MAX);
+    (to(a), to(b))
 }
 
 /// Character offsets where the lines of `t` start.
@@ -667,9 +781,9 @@ fn line_starts(t: &str) -> Vec<u32> {
     v
 }
 
-#[derive(Clone, Copy, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-enum KeyP {
+pub(crate) enum KeyP {
     Backspace,
     Delete,
     Left,
@@ -682,7 +796,12 @@ enum KeyP {
     SelectAll,
     /// Stop editing (Escape).
     Escape,
+    /// Indent: spaces to the next tab stop (with `shift`: one indent level less).
+    Tab,
 }
+
+/// Spaces per indent level (Tab, `>>`, vim's shiftwidth).
+pub(crate) const INDENT: usize = 4;
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -693,15 +812,28 @@ struct InputP {
     /// Shift held: arrows and Home/End extend the selection.
     #[serde(default)]
     shift: bool,
+    /// Ctrl held with `text` (vim mode: Ctrl+R redo).
+    #[serde(default)]
+    ctrl: bool,
+    /// When the key was pressed (ms; vim mode's `jk` and leader timing).
+    t_ms: Option<u64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct CaretP {
     offset: u32,
+    /// Select the word at `offset` (a double click).
+    #[serde(default)]
+    word: bool,
     /// Keep the anchor (Shift+click extends the selection).
     #[serde(default)]
     extend: bool,
+    /// The other end of the selection (a drag from there to `offset`).
+    anchor: Option<u32>,
+    /// Select the line at `offset` (a triple click).
+    #[serde(default)]
+    line: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -720,7 +852,7 @@ fn editing(s: &Session) -> Result<TextEdit, EngineError> {
         .ok_or_else(|| EngineError::Model("no text box is being edited".into()))
 }
 
-fn key(s: &mut Session, mut ed: TextEdit, k: KeyP, shift: bool) -> Result<Option<TextEdit>, EngineError> {
+pub(crate) fn key(s: &mut Session, mut ed: TextEdit, k: KeyP, shift: bool) -> Result<Option<TextEdit>, EngineError> {
     let o = edited(s, &ed);
     let text = content_of(o.as_ref()).to_string();
     let len = u32::try_from(text.chars().count()).unwrap_or(u32::MAX);
@@ -740,33 +872,7 @@ fn key(s: &mut Session, mut ed: TextEdit, k: KeyP, shift: bool) -> Result<Option
     };
     match k {
         KeyP::Escape => return Ok(None),
-        // Enter on an empty list item ends the list; Backspace there drops its bullet.
-        KeyP::Enter | KeyP::Backspace if a == b && line_start == line_end && !ed.pending.is_empty() => {
-            ed.pending.clear();
-            return Ok(Some(ed));
-        }
-        KeyP::Enter => {
-            // A list goes on in the next line (a checked box continues unchecked); a heading
-            // does not.
-            let next: Vec<TextStyle> = match &o {
-                Some(CanvasObject {
-                    kind: ObjectKind::Text { marks, .. },
-                    ..
-                }) if line_start < line_end => marks
-                    .iter()
-                    .filter(|m| m.start < line_end && m.end > line_start)
-                    .filter_map(|m| match m.style {
-                        TextStyle::BulletList | TextStyle::NumberedList => Some(m.style),
-                        TextStyle::Checkbox { .. } => Some(TextStyle::Checkbox { checked: false }),
-                        _ => None,
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            };
-            let mut ed = type_text(s, ed, "\n")?;
-            ed.pending = next;
-            return Ok(Some(ed));
-        }
+        KeyP::Enter => return type_text(s, ed, "\n").map(Some),
         KeyP::Backspace | KeyP::Delete if a < b => return type_text(s, ed, "").map(Some),
         KeyP::Backspace if a > 0 => {
             ed.anchor = a.saturating_sub(1);
@@ -779,6 +885,12 @@ fn key(s: &mut Session, mut ed: TextEdit, k: KeyP, shift: bool) -> Result<Option
             return type_text(s, ed, "").map(Some);
         }
         KeyP::Backspace | KeyP::Delete => {}
+        KeyP::Tab if shift => return dedent(s, ed).map(Some),
+        KeyP::Tab => {
+            let col = usize::try_from(col).unwrap_or(0);
+            let n = INDENT.saturating_sub(col.checked_rem(INDENT).unwrap_or(0)).max(1);
+            return type_text(s, ed, &" ".repeat(n)).map(Some);
+        }
         KeyP::Left if !shift && a < b => moved(&mut ed, a),
         KeyP::Right if !shift && a < b => moved(&mut ed, b),
         KeyP::Left => {
@@ -808,35 +920,64 @@ fn key(s: &mut Session, mut ed: TextEdit, k: KeyP, shift: bool) -> Result<Option
             ed.caret = len;
         }
     }
-    // Moving the caret starts a new undo step for the next typing and drops what markdown
-    // left pending.
+    // Moving the caret starts a new undo step for the next typing.
     s.coalesce = None;
-    ed.pending.clear();
-    ed.plain = false;
     Ok(Some(ed))
+}
+
+/// Shift+Tab: removes one indent level (up to [`INDENT`] leading spaces) from the caret's line.
+pub(crate) fn dedent(s: &mut Session, mut ed: TextEdit) -> Result<TextEdit, EngineError> {
+    let text: Vec<char> = content_of(edited(s, &ed).as_ref()).chars().collect();
+    let caret = usize::try_from(ed.caret).unwrap_or(0).min(text.len());
+    let ls = text
+        .get(..caret)
+        .and_then(|h| h.iter().rposition(|c| *c == '\n'))
+        .map_or(0, |i| i.saturating_add(1));
+    let k = (0..INDENT)
+        .take_while(|&i| text.get(ls.saturating_add(i)) == Some(&' '))
+        .count();
+    if k == 0 {
+        return Ok(ed);
+    }
+    let to = |x: usize| u32::try_from(x).unwrap_or(u32::MAX);
+    ed.anchor = to(ls);
+    ed.caret = to(ls.saturating_add(k));
+    let mut ed = type_text(s, ed, "")?;
+    let back = caret.saturating_sub(k).max(ls);
+    ed.caret = to(back);
+    ed.anchor = ed.caret;
+    Ok(ed)
 }
 
 pub(crate) fn register_editing(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "text.input",
-            doc: "Type into the text box being edited: `text` replaces the selection at the caret; `key` is backspace, delete, left, right, up, down, home, end, enter, select_all or escape (stop editing); `shift` extends the selection. Typing into one box is one undo step until the caret moves.",
-            reqs: &["R-TEXT-001", "R-TEXT-002"],
+            doc: "Type into the text box being edited: `text` replaces the selection at the caret; `key` is backspace, delete, left, right, up, down, home, end, enter, tab (indent; with `shift` dedent), select_all or escape (stop editing); `shift` extends the selection. Typing into one box is one undo step until the caret moves. In vim mode keys are vim's (`ctrl` with `text` for Ctrl+R, `t_ms` for jk and leader timing).",
+            reqs: &["R-TEXT-001", "R-TEXT-002", "R-VIM-002", "R-VIM-003", "R-VIM-004"],
             implemented: true,
         },
         |s: &mut Session, p: InputP| {
             let mut ed = editing(s)?;
-            if let Some(t) = &p.text {
-                if t.chars().count() > MAX_TYPED {
+            let text = match &p.text {
+                Some(t) if t.chars().count() > MAX_TYPED => {
                     return Err(EngineError::Model("too much text at once".into()));
                 }
                 // Control characters other than newlines and tabs are not text.
-                let t: String = t.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').collect();
-                ed = type_text(s, ed, &t)?;
-            }
-            let next = match p.key {
-                Some(k) => key(s, ed, k, p.shift)?,
-                None => Some(ed),
+                Some(t) => Some(t.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').collect::<String>()),
+                None => None,
+            };
+            let next = if ed.vim.is_some() && s.settings.vim {
+                super::vim::input(s, ed, text.as_deref(), p.key, p.shift, p.ctrl, p.t_ms)?
+            } else {
+                ed.vim = None;
+                if let Some(t) = &text {
+                    ed = type_text(s, ed, t)?;
+                }
+                match p.key {
+                    Some(k) => key(s, ed, k, p.shift)?,
+                    None => Some(ed),
+                }
             };
             match next {
                 Some(ed) => s.text_edit = Some(ed),
@@ -854,14 +995,34 @@ pub(crate) fn register_editing(r: &mut Registry) -> Result<(), EngineError> {
         },
         |s: &mut Session, p: CaretP| {
             let mut ed = editing(s)?;
-            let len = u32::try_from(content_of(edited(s, &ed).as_ref()).chars().count()).unwrap_or(u32::MAX);
-            ed.caret = p.offset.min(len);
-            if !p.extend {
-                ed.anchor = ed.caret;
+            let content = content_of(edited(s, &ed).as_ref()).to_string();
+            let len = u32::try_from(content.chars().count()).unwrap_or(u32::MAX);
+            let off = p.offset.min(len);
+            // The selection as [anchor, caret) like a text field.
+            let (mut a, mut c) = match p.anchor {
+                Some(x) => (x.min(len), off),
+                None if p.extend => (ed.anchor.min(len), off),
+                None => (off, off),
+            };
+            if p.word {
+                (a, c) = word_at(&content, off);
+            }
+            if p.line {
+                (a, c) = line_at(&content, off);
+            }
+            match ed.vim.is_some() {
+                // Vim: a click is the Normal-mode cursor, a selection Visual mode (R-VIM-001).
+                true => super::vim::click(&mut ed, &content, a, c, p.line),
+                false => {
+                    ed.anchor = a;
+                    ed.caret = c;
+                }
             }
             ed.place = None;
-            ed.pending.clear();
-            ed.plain = false;
+            ed.place_from = None;
+            ed.word = false;
+            ed.line = false;
+            ed.extend = false;
             s.coalesce = None;
             s.text_edit = Some(ed.clone());
             Ok(ed)
@@ -913,12 +1074,35 @@ pub(crate) fn register_editing(r: &mut Registry) -> Result<(), EngineError> {
         },
         |s: &mut Session, _: EndP| end(s),
     )))?;
+    r.register(Box::new(Typed::new(
+        Spec {
+            id: "text.open",
+            doc: "Start typing into a text box with the caret at a character offset (no pointer needed); in vim mode in Normal mode.",
+            reqs: &["R-TEXT-001", "R-VIM-001", "R-VIM-005"],
+            implemented: true,
+        },
+        |s: &mut Session, p: OpenP| {
+            let (note, _) = text_object(s, p.note, p.id)?;
+            open_at(s, note, p.id, p.offset)?;
+            Ok(s.text_edit.clone())
+        },
+    )))?;
     Ok(())
 }
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct EndP {}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct OpenP {
+    id: u64,
+    /// Caret position (characters; default 0).
+    #[serde(default)]
+    offset: u32,
+    note: Option<u64>,
+}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]

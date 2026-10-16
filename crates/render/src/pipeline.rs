@@ -913,6 +913,16 @@ impl Renderer {
         }
     }
 
+    /// The covers shown revealed (faint) from the next frame on (R-PEN-014).
+    pub fn set_revealed(&mut self, revealed: std::collections::HashSet<vibenote_model::ObjectId>) {
+        if revealed != self.state.revealed && !self.state.set_revealed(revealed.clone()) {
+            self.state.clear();
+            self.state.revealed = revealed;
+            self.tiles.clear();
+            self.base = None;
+        }
+    }
+
     /// The images drawn under the ink from the next frame on (PDF pages, ADR 0004), in draw
     /// order. Pixels are uploaded once per key and kept while used (bounded GPU memory).
     pub fn set_images(&mut self, images: Vec<ImageQuad>) {
@@ -1289,7 +1299,7 @@ impl Renderer {
         for s in live {
             match s.tool {
                 Tool::Highlighter => push_stroke(&mut live_hl, s, vp)?,
-                Tool::Pen => push_stroke(&mut live_pen, s, vp)?,
+                Tool::Pen | Tool::Cover => push_stroke(&mut live_pen, s, vp)?,
             }
         }
         let seg_u = Uniforms {
@@ -1465,6 +1475,43 @@ impl Renderer {
                 push_stroke(&mut vector_segs, s, vp)?;
             }
             let texts = std::mem::take(&mut self.texts);
+            // Code block backgrounds (R-TEXT-007) behind the text: rows of segments whose
+            // round caps stay inside each rectangle.
+            for [x0, y0, x1, y1] in self.text.code_backgrounds(&texts) {
+                let (w, h) = ((x1 - x0).max(0.0), (y1 - y0).max(0.0));
+                let t = (h / 4.0).min(w / 2.0);
+                if t.is_nan() || t <= 0.0 {
+                    continue;
+                }
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a few rows
+                let rows = ((h / t).ceil() as usize).clamp(1, 16);
+                #[allow(clippy::cast_precision_loss)]
+                let step = if rows > 1 {
+                    (h - t) / rows.saturating_sub(1) as f64
+                } else {
+                    0.0
+                };
+                for k in 0..rows {
+                    #[allow(clippy::cast_precision_loss)]
+                    let y = y0 + t / 2.0 + step * k as f64;
+                    let sample = |x: f64| vibenote_model::Sample {
+                        x,
+                        y,
+                        pressure: 1.0,
+                        tilt_x: 0.0,
+                        tilt_y: 0.0,
+                        t_us: 0,
+                    };
+                    #[allow(clippy::cast_possible_truncation)] // a row's thickness
+                    let row = Stroke {
+                        tool: Tool::Pen,
+                        color: crate::code::BACKGROUND,
+                        width: t as f32,
+                        samples: vec![sample(x0 + t / 2.0), sample(x1 - t / 2.0)],
+                    };
+                    push_stroke(&mut vector_segs, &row, vp)?;
+                }
+            }
             for (a, b, t, color) in self.text.decorations(&texts) {
                 let line = Stroke {
                     tool: Tool::Pen,
@@ -2291,6 +2338,11 @@ impl Headless {
         self.r.set_display(display);
     }
 
+    /// See [`Renderer::set_revealed`].
+    pub fn set_revealed(&mut self, revealed: std::collections::HashSet<vibenote_model::ObjectId>) {
+        self.r.set_revealed(revealed);
+    }
+
     /// See [`Renderer::text_caret`].
     pub fn text_caret(&mut self, item: &crate::TextItem, offset: u32) -> (f64, f64, f64) {
         self.r.text_caret(item, offset)
@@ -2583,6 +2635,7 @@ fn push_stroke(segs: &mut Vec<Seg>, s: &Stroke, vp: &Viewport) -> Result<(), Ren
         // Highlighter: translucent (per-stroke coverage pass is ADR 0003 open item).
         Tool::Highlighter => (s.color.0 & 0xffff_ff00) | 0x59,
         Tool::Pen => s.color.0,
+        Tool::Cover => s.color.0 | 0xff,
     };
     let to_px = |x: f64, y: f64| [px((x - vp.origin_x) * vp.zoom), px((y - vp.origin_y) * vp.zoom)];
     let rad = |q: &vibenote_model::Sample| {

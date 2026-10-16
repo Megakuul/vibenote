@@ -34,7 +34,7 @@ struct Results {
 }
 
 /// "A/B/C" for a folder chain (bounded depth; cycles cannot occur in a valid workspace).
-fn path(ws: &Workspace, folder: Option<FolderId>) -> String {
+pub(crate) fn path(ws: &Workspace, folder: Option<FolderId>) -> String {
     let mut parts = Vec::new();
     let mut cur = folder;
     for _ in 0..=vibenote_model::limits::MAX_FOLDER_DEPTH {

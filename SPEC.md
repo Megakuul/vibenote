@@ -55,8 +55,23 @@ pressure, tilt, timestamp. No sample is dropped by the app at event rates up to 
   (count and values). End-to-end via simtab: app sample count = compositor-delivered count.
 
 **R-PEN-005 Pen tools** Tools: pen, highlighter (translucent, drawn below ink of the same layer
-[proposal]), stroke eraser, area (pixel) eraser, lasso selection, shapes (R-SHAPE), ruler (R-RULER).
+[proposal]), stroke eraser, area (pixel) eraser, lasso selection, shapes (R-SHAPE), ruler (R-RULER),
+cover (R-PEN-014).
 - AC: each tool is a registered command `tool.select.<name>`; switching is tested per tool.
+
+**R-PEN-013 Colours** (owner 2026-10-15) Pen and highlighter each have their own colour, chosen
+from a palette on the toolbar (8 pen colours, 6 highlighter colours) or a custom colour picker;
+the choice persists with the workspace settings and applies to new strokes (selected strokes are
+recoloured with `selection.recolor`).
+- AC: settings round-trip; a stroke drawn after choosing a colour has it (engine test).
+
+**R-PEN-014 Cover (flashcards)** (owner 2026-10-15) A cover tool (key M) draws wide, opaque strokes
+that hide whatever is under them (ink, text, PDFs, images). Tapping a cover (pen, mouse, any
+drawing tool) reveals what is underneath — the cover turns faint — and tapping it again hides it.
+Reveals are not saved: every cover is closed again when the note is opened. Covers are strokes
+otherwise (lasso, eraser, undo); they are never recognised as handwriting.
+- AC: a cover stroke is stored with its tool; a tap on it toggles the reveal without adding ink;
+  reopening the note closes all covers (engine tests).
 
 **R-PEN-006 Eraser end** The pen's eraser end acts as the eraser tool (stroke eraser by default,
 configurable to area eraser) without changing the selected tool.
@@ -153,6 +168,100 @@ strikethrough, three heading sizes, bullet and numbered lists, checkboxes, text 
 
 **R-TEXT-003** Text boxes can be drawn over and next to; typed text is searchable (R-SEARCH).
 
+**R-TEXT-004 Auto-size** (owner 2026-10-15) A text box's frame (outline, selection box, hit
+area) always fits its laid-out text: its height is all lines at their real sizes (headings, font
+size), its width the longest line up to the box's wrap width. Typing more or making the font
+larger grows the frame at once; deleting shrinks it. New boxes wrap at 600 screen px at the zoom
+they were created at; the width bar sets the wrap width.
+- AC: a new box grows in width while one line is typed and wraps beyond the wrap width; setting a
+  larger size or a heading grows the height; the frame equals the renderer's layout extent (±1 px).
+
+**R-TEXT-005 Clicks in text** (owner 2026-10-15, revised the same day: "it should be literally
+the normal field behaviour") Text boxes behave like ordinary text fields. With the text tool (and
+a mouse click with the pen or highlighter): a click on a box types into it with the caret exactly
+where it was clicked; a drag selects from the press to the pointer; a double click (two presses
+within 400 ms and 8 px) selects the word, a triple click the line; Shift+click extends the
+selection. A click outside ends editing. The box being edited is moved by dragging its frame
+(the band just outside the text) and resized by its width bar; the lasso moves and scales boxes
+as before. With vim mode on, a click puts the Normal-mode cursor on the clicked character, a drag
+or double click selects in Visual mode. Shortcuts for every tool are shown on the toolbar buttons.
+- AC: engine tests of click, drag, double and triple click, and frame drag.
+
+**R-TEXT-006 Text colour** (owner 2026-10-15) The text format bar has a colour palette button
+(the pen colours, plus a custom picker) that colours the selection, or the whole box when nothing
+is selected (like the other formats).
+- AC: `text.format` colour over a range is stored and rendered (existing tests); UI test of the
+  palette.
+
+**R-TEXT-007 Code blocks** (owner 2026-10-15) In a text box, lines between a fence line of three
+backticks with an optional language name (```` ```rust ````) and a closing fence are a code block:
+shown in the monospace font on a tinted background, with syntax highlighting (keywords, strings,
+comments, numbers, types, function names) for rust, python, javascript/typescript, c/c++, go,
+java, bash/sh, lua, sql, json, toml, yaml, nix, html/xml and css; other or missing languages get
+generic highlighting. Display only: the stored text is the plain text with its fences. Tab
+indents (4 spaces), Shift+Tab dedents, in any text box.
+- AC: highlighting spans for a sample per language (unit tests); fenced lines render mono.
+
+---
+
+## 5a. Vim mode and finder (VIM) — owner 2026-10-15
+
+**R-VIM-001 Vim mode** A global setting (Settings and a toolbar toggle, default off; persisted).
+While it is on, every text box is shown in a monospace font (JetBrains Mono), left-aligned —
+display only, the stored text and formatting do not change — and editing an existing box starts
+in Normal mode (a new, empty box starts in Insert mode). The mode (NORMAL / INSERT / VISUAL / VISUAL LINE) is shown while editing; Normal mode shows
+a block cursor. Like an editor, a box wraps at no fewer than 100 columns, its frame spans that
+width with padding around the text, and selections are drawn as whole rows (Visual Line rows
+span the box; rows a selection continues past reach its right edge; an empty line is one cell).
+- AC: setting round-trips; with vim on, text items are laid out mono (render test), wrap at
+  ≥ 100 columns and have a padded frame; editing starts in Normal mode.
+
+**R-VIM-002 Motions and operators** In Normal mode the keys are vim's (counts allowed):
+`h j k l`, `w b e W B E`, `0 ^ $`, `gg G`, `f F t T` + char, `;`; `i a I A o O` enter Insert;
+`x X s S r` + char, `~`, `J`, `D C`, `dd cc yy`, `d c y` + motion or text object (`iw aw ip`),
+`p P`, `u` undo, Ctrl+R redo; `v` / `V` Visual (motions extend; `d c y x > ~ J` act on it).
+Unnamed register only. One Insert session is one undo step (a change and the typing after it
+too); every Normal command is one step; `u` never undoes past the start of editing the box.
+Behaviour follows Neovim's defaults with `autoindent smarttab shiftwidth=4 softtabstop=4
+expandtab` (owner 2026-10-15: "ensure this works properly like normal vim"): failed motions
+abort operators, 'nostartofline' (linewise commands keep the column), `$` keeps to line ends,
+`cw` special cases, Enter/`o`/`O`/`cc` keep the indent (an untouched auto indent is removed on
+Esc), Tab inserts spaces to the next stop, Backspace over spaces goes back to the previous stop,
+Shift+Tab dedents.
+- AC: a table of key sequences with expected text and cursor (engine tests), and a table of
+  random sequences whose results were produced by Neovim (differential test).
+
+**R-VIM-003 jk** In Insert mode, `j` followed by `k` within 300 ms leaves Insert like Esc (the `j`
+is removed); a `j` alone stays text. Esc in Insert → Normal; Esc in Normal stops editing.
+- AC: "abjk" typed fast → text "ab", Normal mode; "j", pause, "k" → "jk" stays.
+
+**R-VIM-004 Leader** With vim mode on, Space is the leader key in Normal mode and on the canvas
+(when no text is being typed): Space, then `f`, then `w` (each within 1 s of the previous key,
+pressed one after the other) opens the text finder; Space `f` `f` opens the note finder. Holding
+Space and dragging still pans. Any other key cancels the sequence. In Insert mode (owner
+2026-10-15: "should ALWAYS work even if I'm in a field typing") the same keys typed quickly
+(each within 400 ms, like `jk`) also open the finder and the typed " f…" is taken back; typed
+slowly they stay text.
+- AC: engine test: the sequence opens the finder; a slow sequence (> 1 s) does not; in Insert
+  mode a fast " fw" opens the finder and leaves the text unchanged, a slow one is text.
+
+**R-VIM-006 Typing into a selected box** (owner 2026-10-15) With vim mode on, when a single text
+box is selected (lasso, or the box under a click), typing a key starts editing it in Normal mode
+and the key acts as a vim command (`i`, `A`, `o`, `dd`, …); Esc deselects.
+- AC: engine/UI test: selected box + `A` `x` → "…x" in Insert mode.
+
+**R-VIM-005 Finder** A telescope-like overlay in the centre: a prompt (focused), a ranked result
+list and a preview of the selected result. Typing filters with fuzzy matching (characters in
+order; word starts and runs rank higher). Up/Down, Ctrl+N/Ctrl+P, Ctrl+J/Ctrl+K move; Enter opens;
+Esc closes. Never needs the mouse.
+- Text finder (Space f w): lines of typed text (text boxes) and recognised handwriting in all
+  notes; a result shows the line, the note and its folder path. Enter opens the note centred on
+  the block; a text box is put into editing (Normal mode) with the cursor at the match.
+- Note finder (Space f f, also Ctrl+P): notes by name and folder path, recent first when empty.
+  Enter opens the note.
+- AC: `finder.query` ranks fuzzy matches (tests); `finder.open` opens the note, centres the block
+  and starts editing a text box at the match; the overlay is keyboard-only (UI test).
+
 ---
 
 ## 6. Links (LINK)
@@ -183,6 +292,14 @@ stroke (or tapping it in "audio mode") plays from the moment it was written.
 
 **R-AUDIO-003** Recording never blocks inking (latency budget R-PERF-001 holds while recording).
 
+**R-AUDIO-004 Players** (owner 2026-10-15) Audio objects (recordings and imported or dropped
+music/MP3 files) are players on the canvas: a tap (pen or mouse, any drawing tool) on the play
+button plays and a tap while playing pauses; a tap on the progress bar plays from there. While
+playing the player shows the position and progress. The toolbar's record button shows the
+elapsed time while recording; a recording or playback error is shown to the user, not only logged.
+- AC: engine tests: a tap on a player starts playback (status), a second tap stops it, a tap on
+  the bar seeks; UI test: an error from `audio.record.start` is shown.
+
 ---
 
 ## 8. Shapes & ruler (SHAPE, RULER)
@@ -193,13 +310,18 @@ snapping).
 
 **R-SHAPE-002 Snap from ink** Drawing a rough shape and holding the pen still for 500 ms
 [proposal] converts it to the clean shape (line, arrow, rectangle, ellipse, triangle). Undo
-returns to the original ink.
+returns to the original ink. A line is the stroke's best-fit line (hooks at its ends and a
+slight bow allowed), levelled exactly within 6° of horizontal or vertical; a nearly round
+ellipse becomes a circle; corner overshoot does not grow a rectangle.
 - AC: fixture set of rough shapes → correct class for ≥ 95 % [proposal]; strokes that are not
   held are never converted.
 
-**R-RULER-001** [proposal] A ruler object can be shown/hidden; it can be moved and rotated (mouse,
-keyboard, or pen with barrel button); pen strokes starting within 12 px of its edge snap to the
-edge; angle display; 15° snapping when rotating with Shift.
+**R-RULER-001** (owner 2026-10-15: "a virtual ruler that also allows doing straight lines") A ruler
+can be shown/hidden (toolbar button, key R). It is drawn as a translucent band with tick marks
+and its angle; dragging its body (pen, mouse) moves it, dragging the round handle at its end or
+the wheel over it rotates it (Shift: 15° steps; Alt+Left / Alt+Right turn by 15°). Pen
+and mouse strokes starting within 12 px of its drawing edge are laid exactly along the edge —
+already while drawing.
 - AC: fixture: stroke drawn near ruler edge → resulting stroke is collinear with the edge
   (max deviation 0.5 px).
 
@@ -315,7 +437,7 @@ UI, shortcuts, CLI and control channel dispatch by id. Programmatic calls never 
 
 **R-CMD-002 Shortcuts** [proposal] P pen, H highlighter, E eraser (again: toggle stroke/area),
 L lasso, S shapes, R ruler, T text, Ctrl+Z / Ctrl+Shift+Z undo/redo, Ctrl+C/X/V, Del delete,
-Ctrl+P quick-open, Ctrl+F find, Ctrl+Shift+F global search, Ctrl+0 zoom to fit, Ctrl+1 100 %,
+Ctrl+P quick-open (the note finder, R-VIM-005), Ctrl+F find, Ctrl+Shift+F global search, Ctrl+0 zoom to fit, Ctrl+1 100 %,
 Space+drag pan. All rebindable.
 - AC: keymap test maps every shortcut to an existing command id.
 

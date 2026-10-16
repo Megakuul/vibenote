@@ -293,6 +293,12 @@ pub fn run(opts: &Options) -> Result<(), UiError> {
             .audio
             .is_recording()
             .then_some(std::time::Duration::from_millis(250));
+        // A playing player shows its progress (R-AUDIO-004).
+        let playing = app.engine.session.audio.is_playing();
+        if playing {
+            app.dirty = true;
+        }
+        let playing = playing.then_some(std::time::Duration::from_millis(100));
         // A stroke being drawn may be held still to snap into a shape (R-SHAPE-002).
         let holding = app
             .engine
@@ -301,7 +307,7 @@ pub fn run(opts: &Options) -> Result<(), UiError> {
             .stroke
             .is_some()
             .then_some(std::time::Duration::from_millis(20));
-        let timeout = [timeout, app.chrome.wake_in(), recording, holding]
+        let timeout = [timeout, app.chrome.wake_in(), recording, holding, playing]
             .into_iter()
             .flatten()
             .min();
@@ -482,7 +488,38 @@ struct ToolSlot {
 /// Caret, selection and box outline of the text box being edited.
 const TEXT_CARET_COLOR: u32 = 0x2a6f_dbff;
 const TEXT_SELECTION_COLOR: u32 = 0x3b7b_e04a;
+/// Vim's Normal-mode block cursor (translucent, the character stays readable).
+const TEXT_BLOCK_COLOR: u32 = 0x2a6f_db70;
 const TEXT_BOX_COLOR: u32 = 0x9aa3_b090;
+
+/// A vim selection as whole rows (R-VIM-001): one rectangle per laid-out row; rows the selection
+/// continues past reach the right edge `x1`, Visual Line rows span `x0..x1`, and every row is at
+/// least one `cell` wide (an empty line too).
+fn full_line_rows(ranges: &[[f64; 4]], x0: f64, x1: f64, linewise: bool, cell: f64) -> Vec<[f64; 4]> {
+    let mut rows: Vec<[f64; 4]> = Vec::new();
+    for r in ranges {
+        match rows.iter_mut().find(|q| (q[1] - r[1]).abs() < 0.5) {
+            Some(q) => {
+                q[0] = q[0].min(r[0]);
+                q[2] = q[2].max(r[2]);
+                q[3] = q[3].max(r[3]);
+            }
+            None => rows.push(*r),
+        }
+    }
+    rows.sort_by(|a, b| a[1].total_cmp(&b[1]));
+    let n = rows.len();
+    for (i, q) in rows.iter_mut().enumerate() {
+        if linewise {
+            q[0] = x0;
+            q[2] = x1;
+        } else if i.saturating_add(1) < n {
+            q[2] = x1;
+        }
+        q[2] = q[2].max(q[0] + cell);
+    }
+    rows
+}
 
 /// Text layout queries of either renderer (GPU window or the shm fallback).
 trait TextLayout {
@@ -521,6 +558,8 @@ struct TextGeom {
     caret: (f64, f64, f64),
     last: (f64, f64, f64),
     ranges: Vec<[f64; 4]>,
+    /// Vim's block cursor: the cursor character's box.
+    block: Vec<[f64; 4]>,
 }
 
 /// Scales a logical length by `scale120 / 120`, rounding (wp_fractional_scale_v1).
@@ -635,7 +674,7 @@ impl App {
                 }
             }
         };
-        let text_box = |content: String, markdown: bool| serde_json::json!({"at": [x, y], "width": 360.0 / zoom, "size": 16.0 / zoom, "content": content, "markdown": markdown});
+        let text_box = |content: String| serde_json::json!({"at": [x, y], "width": 600.0 / zoom, "size": 16.0 / zoom, "content": content});
         match p.kind {
             Kind::Own => {}
             Kind::Text(_) => {
@@ -643,7 +682,7 @@ impl App {
                 if self.engine.session.text_edit.is_some() {
                     run(self, "text.input", serde_json::json!({ "text": text }));
                 } else if !text.trim().is_empty()
-                    && let Some(r) = run(self, "text.create", text_box(text, true))
+                    && let Some(r) = run(self, "text.create", text_box(text))
                 {
                     inserted.extend(r.get("id").and_then(serde_json::Value::as_u64));
                 }
@@ -683,10 +722,7 @@ impl App {
                         Some(clip::FileKind::Text) => match std::fs::metadata(&path) {
                             Ok(m) if m.len() <= 1 << 20 => match std::fs::read_to_string(&path) {
                                 Ok(t) => run(self, "text.create", {
-                                    let md = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-                                        e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown")
-                                    });
-                                    let mut v = text_box(t, md);
+                                    let mut v = text_box(t);
                                     if let Some(o) = v.as_object_mut() {
                                         o.insert("at".into(), at);
                                     }
@@ -793,6 +829,9 @@ impl App {
                 if let Some(errs) = r.get("errors").and_then(serde_json::Value::as_array) {
                     for e in errs {
                         eprintln!("vibenote: input.pen: {e}");
+                        if let Some(msg) = e.as_str().filter(|m| m.contains("audio")) {
+                            self.chrome.notify(friendly_error("audio", msg));
+                        }
                     }
                 }
             }
@@ -838,6 +877,14 @@ impl App {
 
     /// Runs what the chrome asked for (engine commands; search results go back to it).
     fn apply_actions(&mut self, actions: Vec<Action>) {
+        if actions.is_empty() {
+            return;
+        }
+        self.apply_each(actions);
+        self.open_requested_panel();
+    }
+
+    fn apply_each(&mut self, actions: Vec<Action>) {
         for a in actions {
             match a {
                 Action::Cmd(name, params) => {
@@ -848,7 +895,10 @@ impl App {
                             self.chrome.created(name, &params, &r);
                         }
                         Ok(_) => {}
-                        Err(e) => eprintln!("vibenote: {name}: {e}"),
+                        Err(e) => {
+                            eprintln!("vibenote: {name}: {e}");
+                            self.chrome.notify(friendly_error(name, &e.to_string()));
+                        }
                     }
                 }
                 Action::Show { note, region } => {
@@ -872,6 +922,19 @@ impl App {
                             eprintln!("vibenote: view.pan: {e}");
                         }
                     }
+                }
+                Action::FinderQuery { kind, query } => self.finder_query(kind, &query),
+                Action::FinderOpen(r) => {
+                    let viewport = [f64::from(self.width), f64::from(self.height)];
+                    let f = |k: &str| r.get(k).cloned().unwrap_or(serde_json::Value::Null);
+                    let params = serde_json::json!({
+                        "note": f("note"), "object": f("object"), "offset": f("offset"),
+                        "region": f("region"), "viewport": viewport,
+                    });
+                    if let Err(e) = self.engine.execute("finder.open", params) {
+                        eprintln!("vibenote: finder.open: {e}");
+                    }
+                    self.dirty = true;
                 }
                 Action::Search(text) => {
                     match self.engine.execute(
@@ -931,7 +994,15 @@ impl App {
     fn text_key(&mut self, ev: &KeyEvent) -> bool {
         let m = self.modifiers;
         let shift = m.shift;
-        let params = if m.ctrl && !m.alt {
+        let t_ms = mono_us() / 1000;
+        let vim = self.engine.session.settings.vim;
+        let params = if vim && m.ctrl && !m.alt && matches!(ev.keysym, Keysym::r | Keysym::R) {
+            // Vim's redo (R-VIM-002).
+            (
+                "text.input",
+                serde_json::json!({"text": "r", "ctrl": true, "t_ms": t_ms}),
+            )
+        } else if m.ctrl && !m.alt {
             let style = |f: &str| ("text.style", serde_json::json!({ "format": f }));
             match ev.keysym {
                 Keysym::a | Keysym::A => ("text.input", serde_json::json!({"key": "select_all"})),
@@ -952,12 +1023,17 @@ impl App {
                 Keysym::End => Some("end"),
                 Keysym::Return | Keysym::KP_Enter => Some("enter"),
                 Keysym::Escape => Some("escape"),
+                // Indent / dedent (R-TEXT-007, R-VIM-002).
+                Keysym::Tab | Keysym::ISO_Left_Tab => Some("tab"),
                 _ => None,
             };
             match (key, ev.utf8.as_deref()) {
-                (Some(k), _) => ("text.input", serde_json::json!({"key": k, "shift": shift})),
+                (Some(k), _) => (
+                    "text.input",
+                    serde_json::json!({"key": k, "shift": shift, "t_ms": t_ms}),
+                ),
                 (None, Some(t)) if !t.is_empty() && !t.chars().any(char::is_control) => {
-                    ("text.input", serde_json::json!({ "text": t }))
+                    ("text.input", serde_json::json!({ "text": t, "t_ms": t_ms }))
                 }
                 (None, _) => return !m.alt && ev.keysym.key_char().is_some(),
             }
@@ -965,27 +1041,60 @@ impl App {
         if let Err(e) = self.engine.execute(params.0, params.1) {
             eprintln!("vibenote: {}: {e}", params.0);
         }
+        // Leader keys typed in the box may ask for the finder (R-VIM-004).
+        self.open_requested_panel();
         self.chrome.invalidate();
         true
     }
 
+    /// Panels the engine asked for (the finder from leader keys or Ctrl+P; R-VIM-005).
+    fn open_requested_panel(&mut self) {
+        let kind = match self.engine.session.ui.panel {
+            Some("finder_text") => "text",
+            Some("finder_notes" | "quickopen") => "notes",
+            _ => return,
+        };
+        self.engine.session.ui.panel = None;
+        self.chrome.open_finder(kind);
+        // The first results (empty query) right away.
+        self.finder_query(kind, "");
+    }
+
+    fn finder_query(&mut self, kind: &str, query: &str) {
+        match self.engine.execute(
+            "finder.query",
+            serde_json::json!({"kind": kind, "query": query, "limit": 50}),
+        ) {
+            Ok(r) => self.chrome.set_finder_results(query, &r),
+            Err(e) => eprintln!("vibenote: finder.query: {e}"),
+        }
+    }
+
     /// A tap in a text box: the caret goes where the layout puts that point.
     fn place_caret(&mut self) {
-        let Some(at) = self.engine.session.text_edit.as_ref().and_then(|e| e.place) else {
+        let Some(ed) = self.engine.session.text_edit.clone() else {
             return;
         };
+        let Some(at) = ed.place else { return };
         let Some(item) = self.engine.session.edited_text_item() else {
             return;
         };
-        let offset = match (self.gpu.as_mut(), self.renderer.as_mut()) {
-            (Some(g), _) => TextLayout::hit(&mut g.renderer, &item, at),
-            (None, Some(r)) => TextLayout::hit(r, &item, at),
+        let mut hit = |p: (f64, f64)| match (self.gpu.as_mut(), self.renderer.as_mut()) {
+            (Some(g), _) => TextLayout::hit(&mut g.renderer, &item, p),
+            (None, Some(r)) => TextLayout::hit(r, &item, p),
             (None, None) => u32::MAX, // no layout: the end
         };
-        if let Err(e) = self
-            .engine
-            .execute("text.caret", serde_json::json!({ "offset": offset }))
-        {
+        let offset = hit(at);
+        // A drag selects from where it started (R-TEXT-005).
+        let anchor = ed.place_from.map(&mut hit);
+        let params = serde_json::json!({
+            "offset": offset,
+            "word": ed.word,
+            "line": ed.line,
+            "extend": ed.extend,
+            "anchor": anchor,
+        });
+        if let Err(e) = self.engine.execute("text.caret", params) {
             eprintln!("vibenote: text.caret: {e}");
         }
         self.dirty = true;
@@ -1003,12 +1112,20 @@ impl App {
         } else {
             1.0
         };
-        let (a, b) = ed.range();
+        // Vim's Visual modes select up to and including the cursor's character (R-VIM-002).
+        let (a, b) = s.vim_selection().unwrap_or_else(|| ed.range());
         let end = u32::try_from(item.content.chars().count()).unwrap_or(u32::MAX);
+        // Normal mode: a block over the cursor's character (none on an empty line or past the end).
+        let block = s
+            .vim_block_cursor()
+            .filter(|&c| c < end && item.content.chars().nth(usize::try_from(c).unwrap_or(usize::MAX)) != Some('\n'));
         let measure = |r: &mut dyn TextLayout| TextGeom {
             caret: r.caret(&item, ed.caret),
             last: r.caret(&item, end),
             ranges: if a < b { r.ranges(&item, a, b) } else { Vec::new() },
+            block: block
+                .map(|c| r.ranges(&item, c, c.saturating_add(1)))
+                .unwrap_or_default(),
         };
         let g = match (self.gpu.as_mut(), self.renderer.as_mut()) {
             (Some(gpu), _) => measure(&mut gpu.renderer),
@@ -1019,6 +1136,7 @@ impl App {
                     caret: (item.origin.x, item.origin.y, h),
                     last: (item.origin.x, item.origin.y, h),
                     ranges: Vec::new(),
+                    block: Vec::new(),
                 }
             }
         };
@@ -1040,21 +1158,72 @@ impl App {
                 .collect(),
         };
         let mut out = Vec::new();
-        // The box: its wrap width, down to the last line.
-        let pad = 4.0 / zoom;
-        let (x0, y0) = (item.origin.x - pad, item.origin.y - pad);
-        let (x1, y1) = (item.origin.x + item.width + pad, g.last.1 + g.last.2 + pad);
+        // The box: as wide as its text (at least a few characters), down to the last line
+        // (R-TEXT-004); with vim on the whole wrap width with padding, like an editor (R-VIM-001).
+        let (x0, y0, x1, y1) = if item.mono {
+            let f = vibenote_engine::text_frame(&item);
+            let pad = vibenote_engine::vim_pad(item.size);
+            (f.min.x, f.min.y, f.max.x, f.max.y.max(g.last.1 + g.last.2 + pad))
+        } else {
+            let pad = 4.0 / zoom;
+            let (w, _) = vibenote_render::text_measure(&item);
+            let w = w.max(f64::from(item.size) * 4.0).min(item.width);
+            (
+                item.origin.x - pad,
+                item.origin.y - pad,
+                item.origin.x + w + pad,
+                g.last.1 + g.last.2 + pad,
+            )
+        };
         out.push(line(
             &[(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)],
             TEXT_BOX_COLOR,
             1.0 / zoom,
         ));
-        for r in &g.ranges {
-            let mid = f64::midpoint(r[1], r[3]);
-            out.push(line(&[(r[0], mid), (r[2], mid)], TEXT_SELECTION_COLOR, r[3] - r[1]));
+        // Rectangles as rows of round-capped strokes that end exactly at the rectangle's edges
+        // (one thick stroke's caps spilled half a line height onto the neighbouring letters).
+        let fill = |out: &mut Vec<vibenote_model::Stroke>, r: [f64; 4], color: u32| {
+            let (w, h) = ((r[2] - r[0]).max(0.0), (r[3] - r[1]).max(0.0));
+            if w <= 0.0 || h <= 0.0 {
+                return;
+            }
+            let t = (h / 8.0).min(w / 2.0);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a few rows
+            let rows = ((h / t).ceil() as usize).clamp(1, 64);
+            #[allow(clippy::cast_precision_loss)]
+            let step = if rows > 1 {
+                (h - t) / rows.saturating_sub(1) as f64
+            } else {
+                0.0
+            };
+            for k in 0..rows {
+                #[allow(clippy::cast_precision_loss)]
+                let y = r[1] + t / 2.0 + step * k as f64;
+                out.push(line(&[(r[0] + t / 2.0, y), (r[2] - t / 2.0, y)], color, t));
+            }
+        };
+        let ranges = if item.mono {
+            let linewise = s.vim_linewise();
+            let cell = 0.6 * f64::from(item.size);
+            full_line_rows(&g.ranges, item.origin.x, item.origin.x + item.width, linewise, cell)
+        } else {
+            g.ranges.clone()
+        };
+        for r in &ranges {
+            fill(&mut out, *r, TEXT_SELECTION_COLOR);
         }
         let (x, top, h) = g.caret;
-        out.push(line(&[(x, top), (x, top + h)], TEXT_CARET_COLOR, 1.5 / zoom));
+        if s.vim_block_cursor().is_some() {
+            // Normal mode: a block (half an em wide on an empty line).
+            let r = g
+                .block
+                .first()
+                .copied()
+                .unwrap_or([x, top, x + 0.55 * f64::from(item.size), top + h]);
+            fill(&mut out, r, TEXT_BLOCK_COLOR);
+        } else {
+            out.push(line(&[(x, top), (x, top + h)], TEXT_CARET_COLOR, 1.5 / zoom));
+        }
         out
     }
 
@@ -1132,10 +1301,30 @@ impl App {
             }
         }
         mix(u64::from(s.text_edit.is_some()));
+        // Vim's mode and unfinished keys show in the status pill.
+        if let Some(v) = s.text_edit.as_ref().and_then(|e| e.vim.as_ref()) {
+            mix(v.mode as u64);
+            for b in v.pending.bytes() {
+                mix(u64::from(b));
+            }
+        }
+        mix(u64::from(s.settings.vim));
         mix(u64::from(s.live.drag.is_some()));
         mix(u64::try_from(s.suggestions.len()).unwrap_or(0));
         mix(s.settings.tool as u64);
-        if !s.selection.ids.is_empty() || !s.suggestions.is_empty() {
+        mix(u64::from(s.settings.pen_color.0));
+        mix(u64::from(s.settings.highlighter_color.0));
+        // The recording time label (R-AUDIO-004) and the ruler's angle label (R-RULER-001).
+        if let Some(t) = s.audio.recording_start_us() {
+            mix(vibenote_engine::audio::now_us().saturating_sub(t) / 1_000_000);
+        }
+        mix(u64::from(s.ruler.visible));
+        if s.ruler.visible {
+            for v in [s.ruler.x, s.ruler.y, s.ruler.angle_deg] {
+                mix(v.to_bits());
+            }
+        }
+        if !s.selection.ids.is_empty() || !s.suggestions.is_empty() || s.ruler.visible {
             for v in [s.view.origin_x, s.view.origin_y, s.view.zoom] {
                 mix(v.to_bits());
             }
@@ -1150,7 +1339,6 @@ impl App {
             self.chrome_seen = state;
             self.chrome.invalidate();
         }
-        let text = self.text_overlay();
         // The chrome first: what it asks for changes what the canvas shows in this frame.
         let v = self.engine.session.view;
         let vm = ViewMap {
@@ -1166,8 +1354,13 @@ impl App {
             let actions = self.chrome.run(&self.engine, logical, ppp, vm);
             if !actions.is_empty() {
                 self.apply_actions(actions);
+                // The chrome shows engine state the actions changed (a mode, a selection):
+                // run it again next frame.
+                self.chrome.invalidate();
             }
         }
+        // The text box overlay after the chrome's actions (a finder jump starts editing).
+        let text = self.text_overlay();
         let Some(vp) = self.view(pw, ph) else {
             eprintln!("vibenote: window {pw}x{ph} px is beyond the supported size; not drawn");
             self.dirty = false;
@@ -1197,6 +1390,7 @@ impl App {
         let Some(gpu) = self.gpu.as_mut() else { return };
         gpu.renderer.set_background(background);
         gpu.renderer.set_display(display);
+        gpu.renderer.set_revealed(s.revealed.iter().copied().collect());
         gpu.renderer.set_images(images);
         gpu.renderer.set_extras(texts, vectors);
         // Bulk loading of a large note waits while the pen is near (ink first).
@@ -1226,7 +1420,10 @@ impl App {
         let fault = gpu.renderer.take_fault();
         self.retry = false;
         match drawn {
-            Ok(Drawn::Presented) => self.dirty = false,
+            // Actions of this frame's chrome may have changed what it shows: one more frame.
+            Ok(Drawn::Presented) => {
+                self.dirty = self.chrome_state() != self.chrome_seen || self.chrome.wants_frame();
+            }
             Ok(Drawn::Partial | Drawn::Retry) => self.retry = true,
             Ok(Drawn::Skip) => {} // occluded: draw on the next event
             Ok(Drawn::SurfaceLost) => return self.recover_gpu("surface lost"),
@@ -1702,6 +1899,7 @@ impl KeyboardHandler for App {
         }
         // A text box being edited gets typing and editing keys (R-TEXT-002).
         if self.engine.session.text_edit.is_some() && self.text_key(&ev) {
+            self.open_requested_panel();
             self.request_draw(qh);
             return;
         }
@@ -1719,6 +1917,29 @@ impl KeyboardHandler for App {
             self.request_draw(qh);
             return;
         }
+        // Vim mode's leader keys on the canvas (R-VIM-004): Space f w / Space f f. Space stays
+        // held for Space+Drag too.
+        if self.engine.session.settings.vim
+            && !self.modifiers.ctrl
+            && !self.modifiers.alt
+            && let Some(k) = if ev.keysym == Keysym::space {
+                Some("space".to_string())
+            } else {
+                ev.utf8.clone().filter(|t| t.chars().count() == 1)
+            }
+        {
+            let r = self
+                .engine
+                .execute("vim.key", serde_json::json!({"key": k, "t_ms": mono_us() / 1000}));
+            if ev.keysym == Keysym::space {
+                self.space_held = true;
+            }
+            if r.is_ok_and(|v| v.get("consumed") == Some(&serde_json::Value::Bool(true))) {
+                self.open_requested_panel();
+                self.request_draw(qh);
+                return;
+            }
+        }
         // Shortcuts come from the engine's keymap (R-CMD-002); Space is held for Space+Drag.
         if ev.keysym == Keysym::space && !self.modifiers.ctrl {
             self.space_held = true;
@@ -1735,9 +1956,16 @@ impl KeyboardHandler for App {
         let params = match cmd.as_str() {
             "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" => serde_json::json!({ "anchor": centre }),
             "view.zoom_fit" => serde_json::json!({"viewport": [f64::from(self.width), f64::from(self.height)]}),
+            // The ruler appears in the middle of the window (R-RULER-001).
+            "ruler.toggle" if !self.engine.session.ruler.visible => {
+                let (x, y) = self.engine.session.view.to_canvas(centre[0], centre[1] - 40.0);
+                serde_json::json!({"visible": true, "at": [x, y]})
+            }
             _ => serde_json::json!({}),
         };
-        match self.engine.execute(&cmd, params) {
+        let done = self.engine.execute(&cmd, params);
+        self.open_requested_panel();
+        match done {
             Ok(_) if cmd == "clipboard.copy" || cmd == "clipboard.cut" => self.claim_clipboard(),
             Ok(_) => {}
             // Nothing selected (Delete/Escape) or a feature not built yet: not worth a message.
@@ -1894,6 +2122,17 @@ fn key_name(k: Keysym, m: &Modifiers) -> Option<String> {
     Some(parts.join("+"))
 }
 
+/// An error message for the user: what failed and why, in a sentence.
+fn friendly_error(what: &str, e: &str) -> String {
+    let action = match what {
+        "audio.record.start" => "Could not start recording",
+        "audio.record.stop" => "Could not stop recording",
+        "audio" | "audio.play" => "Could not play audio",
+        _ => "That did not work",
+    };
+    format!("{action}: {e}")
+}
+
 /// One `input.pointer` event. Stamped with CLOCK_MONOTONIC on receipt like pen events (the
 /// compositor's millisecond times are on an unspecified clock, so holding a mouse stroke still
 /// never reached the snap time, R-SHAPE-002).
@@ -1903,8 +2142,18 @@ fn pointer_cmd(
     (x, y): (f64, f64),
     button: Option<u32>,
 ) -> (&'static str, serde_json::Value) {
+    pointer_cmd_mods(kind, (x, y), button, false)
+}
+
+/// [`pointer_cmd`] with Shift (a Shift+click extends a text selection).
+fn pointer_cmd_mods(
+    kind: &str,
+    (x, y): (f64, f64),
+    button: Option<u32>,
+    shift: bool,
+) -> (&'static str, serde_json::Value) {
     let t_us = mono_us();
-    let ev = serde_json::json!({"t_us": t_us, "kind": kind, "x": x, "y": y, "button": button});
+    let ev = serde_json::json!({"t_us": t_us, "kind": kind, "x": x, "y": y, "button": button, "shift": shift});
     ("input.pointer", serde_json::json!({ "events": [ev] }))
 }
 
@@ -2025,7 +2274,7 @@ impl PointerHandler for App {
                     // Space+Drag pans (R-CMD-002): the left button acts as the middle one.
                     let b = if self.space_held { BTN_MIDDLE } else { *button };
                     self.mouse_as = b;
-                    Some(pointer_cmd("down", *time, (x, y), Some(b)))
+                    Some(pointer_cmd_mods("down", (x, y), Some(b), self.modifiers.shift))
                 }
                 K::Release { time, button, .. } if self.mouse_held == Some(*button) => {
                     self.mouse_held = None;
@@ -2054,6 +2303,28 @@ impl PointerHandler for App {
                                 .then(|| ("view.pan", serde_json::json!({"dx": -horizontal.absolute, "dy": 0.0})))
                         })
                 }
+                // The wheel over the ruler turns it (R-RULER-001): 1° a notch, 15° with Shift.
+                K::Axis { vertical, .. }
+                    if vertical.absolute != 0.0
+                        && self
+                            .engine
+                            .session
+                            .ruler
+                            .part_at(self.engine.session.view.to_canvas(x, y), self.engine.session.view.zoom)
+                            .is_some() =>
+                {
+                    let notch = if vertical.discrete != 0 {
+                        f64::from(vertical.discrete)
+                    } else {
+                        vertical.absolute / 10.0
+                    };
+                    let by = if self.modifiers.shift { 15.0 } else { 1.0 } * notch.signum();
+                    let a = self.engine.session.ruler.angle_deg + by;
+                    Some((
+                        "ruler.toggle",
+                        serde_json::json!({"visible": true, "angle_deg": a, "snap": self.modifiers.shift}),
+                    ))
+                }
                 K::Axis {
                     horizontal, vertical, ..
                 } => {
@@ -2072,6 +2343,9 @@ impl PointerHandler for App {
                             .flatten()
                         {
                             eprintln!("vibenote: {name}: {e}");
+                            if let Some(msg) = e.as_str().filter(|m| m.contains("audio")) {
+                                self.chrome.notify(friendly_error("audio", msg));
+                            }
                         }
                         self.request_draw(qh);
                     }
@@ -2426,5 +2700,38 @@ impl Dispatch2<tool::ZwpTabletToolV2, App> for Plain {
             app.pen(out);
             app.request_draw(qh);
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+mod tests {
+    use super::full_line_rows;
+
+    #[test]
+    fn vim_selections_are_drawn_as_whole_rows() {
+        // "b" on the first row, an empty line, "cd" on the third (two pieces of one row).
+        let ranges = [
+            [10.0, 0.0, 20.0, 20.0],
+            [0.0, 20.0, 0.0, 40.0],
+            [0.0, 40.0, 8.0, 60.0],
+            [8.0, 40.0, 16.0, 60.0],
+        ];
+        let char = full_line_rows(&ranges, 0.0, 500.0, false, 6.0);
+        assert_eq!(
+            char,
+            vec![
+                [10.0, 0.0, 500.0, 20.0],
+                [0.0, 20.0, 500.0, 40.0],
+                [0.0, 40.0, 16.0, 60.0]
+            ]
+        );
+        let line = full_line_rows(&ranges, 0.0, 500.0, true, 6.0);
+        assert!(line.iter().all(|r| r[0] == 0.0 && r[2] == 500.0), "{line:?}");
+        // A single empty row is still one cell wide.
+        assert_eq!(
+            full_line_rows(&ranges[1..2], 0.0, 500.0, false, 6.0),
+            vec![[0.0, 20.0, 6.0, 40.0]]
+        );
     }
 }
