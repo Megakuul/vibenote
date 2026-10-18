@@ -256,7 +256,9 @@ pub(crate) fn ruler_drag_to(s: &mut Session, p: (f64, f64)) {
     }
 }
 
-/// A stroke starting near the visible ruler's edge goes along it (all samples projected).
+/// A stroke starting near the visible ruler's edge goes along it (all samples projected); any
+/// other stroke cannot enter the ruler: samples that would land on it or behind it (seen from
+/// the side the pen is on) stop at its edge, like a pen against a real ruler (R-RULER-001).
 pub(crate) fn ruler_snap(s: &Session, stroke: &mut vibenote_model::Stroke) {
     let r = s.ruler;
     let zoom = if s.view.zoom.is_finite() && s.view.zoom > 0.0 {
@@ -265,11 +267,59 @@ pub(crate) fn ruler_snap(s: &Session, stroke: &mut vibenote_model::Stroke) {
         1.0
     };
     let Some(first) = stroke.samples.first() else { return };
-    if !r.visible || r.distance((first.x, first.y)) > RULER_SNAP_PX / zoom {
+    if !r.visible {
         return;
     }
-    for p in &mut stroke.samples {
-        (p.x, p.y) = r.project((p.x, p.y));
+    if r.distance((first.x, first.y)) <= RULER_SNAP_PX / zoom {
+        for p in &mut stroke.samples {
+            (p.x, p.y) = r.project((p.x, p.y));
+        }
+        return;
+    }
+    r.block(&mut stroke.samples, zoom);
+}
+
+/// Which side of the ruler the pen is on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Side {
+    /// The drawing edge's side.
+    Edge,
+    /// Behind the body.
+    Back,
+}
+
+impl Ruler {
+    /// Keeps `samples` off the ruler body at `zoom`: while the pen is on one side, samples on
+    /// the body or beyond it are moved back onto the near edge. Going around an end of the
+    /// ruler changes sides; a stroke starting on the body is left alone until it leaves it.
+    fn block(&self, samples: &mut [vibenote_model::Sample], zoom: f64) {
+        let ((ux, uy), (nx, ny)) = self.axes();
+        let (half, depth) = (RULER_LENGTH_PX / 2.0 / zoom, RULER_DEPTH_PX / zoom);
+        let mut side = None;
+        for p in samples {
+            let (dx, dy) = (p.x - self.x, p.y - self.y);
+            let along = dx * ux + dy * uy;
+            let across = dx * nx + dy * ny;
+            if along.abs() > half {
+                side = Some(if across < depth / 2.0 { Side::Edge } else { Side::Back });
+                continue;
+            }
+            let to = match side {
+                Some(Side::Edge) if across > 0.0 => 0.0,
+                Some(Side::Back) if across < depth => depth,
+                Some(_) => continue,
+                None => {
+                    if across <= 0.0 {
+                        side = Some(Side::Edge);
+                    } else if across >= depth {
+                        side = Some(Side::Back);
+                    }
+                    continue;
+                }
+            };
+            p.x = self.x + ux * along + nx * to;
+            p.y = self.y + uy * along + ny * to;
+        }
     }
 }
 

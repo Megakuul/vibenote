@@ -16,6 +16,10 @@ vibenote-storage = { path = "../../crates/storage" }
 vibenote-render = { path = "../../crates/render" }
 vibenote-ink = { path = "../../crates/ink" }
 vibenote-control = { path = "../../crates/control" }
+vibenote-backup = { path = "../../crates/backup" }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 toml = "0.9"
 tempfile = "3"
+# The fake S3 server checks payload hashes; the fake Google token endpoint checks PKCE.
+sha2 = "0.10"
+base64 = "0.22"

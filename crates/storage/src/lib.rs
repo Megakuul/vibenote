@@ -776,6 +776,22 @@ impl Store {
     pub fn integrity_check(&self) -> Result<String, StorageError> {
         Ok(self.conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?)
     }
+
+    /// Writes a consistent copy of the database to `dest`, which must not exist (`VACUUM INTO`;
+    /// works on a reader while the storage thread writes), and checks the copy with
+    /// `PRAGMA quick_check` (R-BACKUP-002). A copy that fails the check is an error.
+    pub fn snapshot_into(&self, dest: &Path) -> Result<(), StorageError> {
+        let to = dest
+            .to_str()
+            .ok_or_else(|| StorageError::Corrupt(format!("snapshot path is not UTF-8: {}", dest.display())))?;
+        self.conn.execute("VACUUM INTO ?1", [to])?;
+        let copy = Connection::open_with_flags(dest, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let check: String = copy.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+        if check != "ok" {
+            return Err(StorageError::Corrupt(format!("snapshot failed quick_check: {check}")));
+        }
+        Ok(())
+    }
 }
 
 fn color_of(v: i64) -> Result<Color, StorageError> {

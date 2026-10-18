@@ -16,6 +16,7 @@ vibenote-control = { path = "../../crates/control" }
 vibenote-render = { path = "../../crates/render" }
 vibenote-ink = { path = "../../crates/ink" }
 vibenote-model = { path = "../../crates/model" }
+vibenote-backup = { path = "../../crates/backup" }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
 

@@ -6,7 +6,7 @@ A feature request touching any of these needs an owner decision first.
 | Item | Note |
 |---|---|
 | PDF / print export | Never trade practical behaviour for exportability. Original PDFs are kept byte-identical. |
-| Sync, cloud, accounts | No network at runtime. |
+| Two-way sync, accounts | No network at runtime, except the one-way cloud backup the owner enables (SPEC §13a, owner 2026-10-18). |
 | Collaboration / sharing | — |
 | Mobile, web, tablets-as-devices | Desktop only. |
 | Non-Linux and non-Wayland platforms (X11, Windows, macOS) | May happen to work; costs no design effort. |

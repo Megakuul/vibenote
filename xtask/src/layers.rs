@@ -16,6 +16,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("vibenote-ink", &["vibenote-geom", "vibenote-model"]),
     ("vibenote-pdf", &["vibenote-geom", "vibenote-model"]),
     ("vibenote-audio", &["vibenote-model"]),
+    ("vibenote-backup", &["vibenote-storage", "vibenote-model"]),
     ("vibenote-hwr", &["vibenote-geom", "vibenote-model", "vibenote-ink"]),
     ("vibenote-render", &["vibenote-geom", "vibenote-model", "vibenote-ink"]),
     (
@@ -24,6 +25,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "vibenote-geom",
             "vibenote-model",
             "vibenote-storage",
+            "vibenote-backup",
             "vibenote-ink",
             "vibenote-hwr",
             "vibenote-pdf",
@@ -53,6 +55,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "vibenote-ink",
             "vibenote-model",
             "vibenote-hwr",
+            "vibenote-backup",
         ],
     ),
     ("vibenote-pdfd", &["vibenote-pdf"]),
@@ -67,6 +70,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "vibenote-render",
             "vibenote-ink",
             "vibenote-control",
+            "vibenote-backup",
         ],
     ),
 ];

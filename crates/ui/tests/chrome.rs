@@ -395,3 +395,35 @@ fn errors_are_shown_as_a_notice() {
     settle(&mut c, &e, size);
     assert!(c.wake_in().is_some(), "it goes away by itself");
 }
+
+/// R-BACKUP-001/003: Settings show the backup of this workspace (service, fields without the
+/// secret, status). Screenshot written for review.
+#[test]
+fn settings_show_the_cloud_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = Engine::open(&dir.path().join("ws.sqlite")).unwrap();
+    let n = e.execute("workspace.note.create", json!({"name": "n"})).unwrap()["id"].clone();
+    e.execute("note.open", json!({ "id": n })).unwrap();
+    e.use_backup_config(&dir.path().join("backup.json"), &dir.path().join("state.json"))
+        .unwrap();
+    e.execute(
+        "backup.configure",
+        json!({"enabled": true, "provider": "s3", "s3": {"bucket": "notes", "region": "eu-central-2",
+               "access_key_id": "AKIA0000", "secret_access_key": "TOP-SECRET"}}),
+    )
+    .unwrap();
+    let mut c = Chrome::new();
+    c.open_settings();
+    let size = (1000.0, 900.0);
+    c.run(&e, size, 1.0, vm(&e));
+    settle(&mut c, &e, size);
+    // The window fades in.
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    c.run(&e, size, 1.0, vm(&e));
+    settle(&mut c, &e, size);
+    let (img, _) = screenshot(&e, &mut c, (1000, 900)).unwrap();
+    let out = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("settings-backup.png");
+    std::fs::write(&out, img.encode_png().unwrap()).unwrap();
+    eprintln!("screenshot: {}", out.display());
+    assert!(c.covers(150.0, 500.0), "settings window with the backup section");
+}

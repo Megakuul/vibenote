@@ -4,6 +4,7 @@
 //! (and their params, which include any timestamps). No clocks, no randomness.
 
 pub mod audio;
+pub mod backup;
 pub mod command;
 mod commands;
 mod extras;
@@ -533,6 +534,9 @@ pub struct Session {
     loaded: std::collections::BTreeSet<String>,
     #[serde(skip)]
     pub reader: StoreReader,
+    /// Cloud backup of the workspace (ADR 0012); none unless the app passed its config file.
+    #[serde(skip)]
+    pub backup: backup::BackupHandle,
     /// Incomplete canvases (notes without an entry are complete).
     #[serde(skip)]
     loads: BTreeMap<NoteId, NoteLoad>,
@@ -1330,6 +1334,8 @@ pub struct Engine {
     pub registry: Registry,
     store: Option<persist::Persister>,
     loader: Option<load::Loader>,
+    /// The workspace database (engines opened from a file).
+    db_path: Option<std::path::PathBuf>,
 }
 
 impl Drop for Engine {
@@ -1355,6 +1361,7 @@ impl Engine {
             registry,
             store: None,
             loader: None,
+            db_path: None,
         })
     }
 
@@ -1429,7 +1436,54 @@ impl Engine {
             e.session.warn(format!("recordings could not be recovered: {x}"));
         }
         e.flush()?;
+        e.db_path = Some(path.to_path_buf());
         Ok(e)
+    }
+
+    /// Turns on cloud backup handling (ADR 0012) for this workspace with the given config and
+    /// state files (the app and CLI: `$XDG_CONFIG_HOME/vibenote/backup.json` and
+    /// `$XDG_STATE_HOME/vibenote/backup-state.json`). Whether anything is uploaded is decided by
+    /// this workspace's entry in the config file (off by default). Engines that never call this
+    /// never touch the network (R-PLAT-003).
+    pub fn use_backup_config(&mut self, config: &std::path::Path, state: &std::path::Path) -> Result<(), EngineError> {
+        let db = self
+            .db_path
+            .as_ref()
+            .ok_or_else(|| EngineError::Model("backup needs a workspace file".into()))?;
+        let b = backup::Backup::open(db, config, state)?;
+        self.session.backup = backup::BackupHandle(Some(std::sync::Arc::new(std::sync::Mutex::new(b))));
+        Ok(())
+    }
+
+    /// Lets time pass for the backup: takes finished work and starts a scheduled backup when one
+    /// is due (R-BACKUP-002); returns messages for the user (failures). Cheap; the app calls it
+    /// every frame and at least every [`backup::CHECK_EVERY_MS`] while backup is enabled.
+    pub fn backup_tick(&mut self, now: std::time::SystemTime) -> Vec<String> {
+        let ms = vibenote_backup::clock::unix_ms(now);
+        self.session.backup.with(|b| Ok(b.tick(ms))).unwrap_or_default()
+    }
+
+    /// True if backup is enabled or work is in progress (the app then wakes up regularly).
+    pub fn backup_active(&self) -> bool {
+        self.session
+            .backup
+            .with(|b| Ok(b.config.enabled || b.busy()))
+            .unwrap_or(false)
+    }
+
+    /// True while a backup or a Google sign-in is in progress.
+    pub fn backup_busy(&self) -> bool {
+        self.session.backup.with(|b| Ok(b.busy())).unwrap_or(false)
+    }
+
+    /// The backup status (as `backup.status`); `None` without backup handling.
+    pub fn backup_status(&self) -> Option<Value> {
+        self.session.backup.with(|b| Ok(b.status())).ok()
+    }
+
+    /// Waits up to `timeout` for running backup work to finish (CLI, tests); `false` on timeout.
+    pub fn backup_wait(&mut self, timeout: std::time::Duration) -> bool {
+        self.session.backup.with(|b| Ok(b.wait(timeout))).unwrap_or(true)
     }
 
     pub fn execute(&mut self, cmd: &str, params: Value) -> Result<Value, EngineError> {

@@ -116,6 +116,13 @@ pub fn open_engine(opts: &Options) -> Result<(Engine, u64), UiError> {
         None => default_workspace()?,
     };
     let mut engine = Engine::open(&path)?;
+    // Cloud backup (ADR 0012): only this workspace's entry in the config decides; a broken
+    // config never keeps the workspace from opening.
+    if let Some((config, state)) = vibenote_engine::backup::default_paths()
+        && let Err(e) = engine.use_backup_config(&config, &state)
+    {
+        eprintln!("vibenote: backup: {e}");
+    }
     let first = opts.note.or_else(|| engine.session.ws.notes.keys().next().map(|n| n.0));
     let id = match first {
         Some(id) => id,
@@ -307,7 +314,12 @@ pub fn run(opts: &Options) -> Result<(), UiError> {
             .stroke
             .is_some()
             .then_some(std::time::Duration::from_millis(20));
-        let timeout = [timeout, app.chrome.wake_in(), recording, holding, playing]
+        // Cloud backup: finished work is picked up and due backups start (R-BACKUP-002).
+        let backup = app
+            .engine
+            .backup_active()
+            .then(|| std::time::Duration::from_millis(if app.engine.backup_busy() { 500 } else { 30_000 }));
+        let timeout = [timeout, app.chrome.wake_in(), recording, holding, playing, backup]
             .into_iter()
             .flatten()
             .min();
@@ -339,6 +351,10 @@ pub fn run(opts: &Options) -> Result<(), UiError> {
             .wrapping_add(app.engine.session.images.finished());
         if pages != app.pdf_pages_seen {
             app.pdf_pages_seen = pages;
+            app.dirty = true;
+        }
+        for msg in app.engine.backup_tick(std::time::SystemTime::now()) {
+            app.chrome.notify(msg);
             app.dirty = true;
         }
         app.place_caret();
@@ -404,7 +420,7 @@ pub struct App {
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
     modifiers: Modifiers,
-    /// Mouse button held over the canvas (left draws, middle pans; R-PEN-012).
+    /// Mouse button held over the canvas (left draws, middle and right pan; R-PEN-012).
     mouse_held: Option<u32>,
     /// Background PDF pages finished when last drawn.
     pdf_pages_seen: u64,
@@ -1318,6 +1334,12 @@ impl App {
         if let Some(t) = s.audio.recording_start_us() {
             mix(vibenote_engine::audio::now_us().saturating_sub(t) / 1_000_000);
         }
+        // The backup's status line in the settings (R-BACKUP-003).
+        if let Some(b) = self.engine.backup_status() {
+            for x in b.to_string().bytes() {
+                mix(u64::from(x));
+            }
+        }
         mix(u64::from(s.ruler.visible));
         if s.ruler.visible {
             for v in [s.ruler.x, s.ruler.y, s.ruler.angle_deg] {
@@ -2058,6 +2080,8 @@ fn egui_key(k: Keysym) -> Option<egui::Key> {
 /// Linux input code of the middle mouse button.
 const BTN_LEFT: u32 = 0x110;
 const BTN_MIDDLE: u32 = 0x112;
+/// Linux input code of the right mouse button (drag pans, like swiping on a touchpad).
+const BTN_RIGHT: u32 = 0x111;
 /// Zoom per wheel step (Ctrl+wheel).
 const WHEEL_ZOOM: f64 = 1.1;
 
@@ -2128,6 +2152,7 @@ fn friendly_error(what: &str, e: &str) -> String {
         "audio.record.start" => "Could not start recording",
         "audio.record.stop" => "Could not stop recording",
         "audio" | "audio.play" => "Could not play audio",
+        w if w.starts_with("backup.") => "Backup",
         _ => "That did not work",
     };
     format!("{action}: {e}")
@@ -2179,7 +2204,7 @@ impl App {
         let button = |b: u32| match b {
             BTN_LEFT => Some(egui::PointerButton::Primary),
             BTN_MIDDLE => Some(egui::PointerButton::Middle),
-            0x111 => Some(egui::PointerButton::Secondary),
+            BTN_RIGHT => Some(egui::PointerButton::Secondary),
             _ => None,
         };
         match &ev.kind {
@@ -2228,7 +2253,7 @@ impl App {
 
 impl PointerHandler for App {
     /// Navigation with the mouse (R-CANVAS-002): wheel pans, Ctrl+wheel zooms at the cursor,
-    /// middle-drag pans. The left button draws with the selected tool (`input.pointer`, R-PEN-012).
+    /// middle- or right-drag pans. The left button draws with the selected tool (`input.pointer`, R-PEN-012).
     /// Motion is forwarded only while a button is held (the system cursor shows hover).
     fn pointer_frame(
         &mut self,
@@ -2268,7 +2293,7 @@ impl PointerHandler for App {
             }
             let cmd = match &ev.kind {
                 K::Press { time, button, .. }
-                    if self.mouse_held.is_none() && (*button == BTN_LEFT || *button == BTN_MIDDLE) =>
+                    if self.mouse_held.is_none() && matches!(*button, BTN_LEFT | BTN_MIDDLE | BTN_RIGHT) =>
                 {
                     self.mouse_held = Some(*button);
                     // Space+Drag pans (R-CMD-002): the left button acts as the middle one.

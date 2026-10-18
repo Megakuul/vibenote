@@ -1,0 +1,27 @@
+[package]
+name = "vibenote-backup"
+description = "One-way cloud backup of a workspace to S3 or Google Drive (ADR 0012); the only crate with networking."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+vibenote-storage = { path = "../storage" }
+# Blocking HTTP over rustls (ring) with the system trust store (ADR 0012 §2).
+ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+blake3 = { version = "1.8", features = ["std"] }
+getrandom = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+vibenote-model = { path = "../model" }

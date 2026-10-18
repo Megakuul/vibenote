@@ -60,6 +60,33 @@ fn r_canvas_002_zoom_range_and_anchor() {
     );
 }
 
+/// R-CANVAS-002: middle- and right-mouse drags pan (the content follows the mouse) and draw
+/// nothing.
+#[test]
+fn r_canvas_002_mouse_drag_pans() {
+    let (mut e, n) = engine_with_note();
+    for (i, button) in [274, 273].into_iter().enumerate() {
+        let t = i as u64 * 100_000;
+        let before = e.session.view.to_canvas(200.0, 200.0);
+        run(
+            &mut e,
+            "input.pointer",
+            json!({"events": [
+                {"t_us": t, "kind": "down", "x": 100.0, "y": 100.0, "button": button},
+                {"t_us": t + 10_000, "kind": "motion", "x": 160.0, "y": 70.0},
+                {"t_us": t + 20_000, "kind": "up", "x": 160.0, "y": 70.0, "button": button},
+            ]}),
+        );
+        // The canvas point that was at (200, 200) is now at (260, 170).
+        let after = e.session.view.to_canvas(260.0, 170.0);
+        assert!(
+            (before.0 - after.0).abs() < 1e-9 && (before.1 - after.1).abs() < 1e-9,
+            "button {button}: {before:?} vs {after:?}"
+        );
+    }
+    assert!(objects(&e, n).is_empty());
+}
+
 /// R-CANVAS-003: every object type can be created, moved, deleted, undone, and round-trips storage.
 #[test]
 fn r_canvas_003_all_object_types() {

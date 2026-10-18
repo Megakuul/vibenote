@@ -58,6 +58,61 @@ fn r_ruler_001_snapping() {
     }
 }
 
+/// R-RULER-001: the ruler blocks ink: a stroke crossing it stops at the edge it came from; one
+/// beside its end is unchanged.
+#[test]
+fn r_ruler_001_blocks_ink() {
+    let (mut e, n) = engine_with_note();
+    run(
+        &mut e,
+        "ruler.toggle",
+        json!({"visible": true, "at": [0.0, 100.0], "angle_deg": 0.0}),
+    );
+    let ptr = |e: &mut vibenote_engine::Engine, t: u64, kind: &str, x: f64, y: f64| {
+        run(
+            e,
+            "input.pointer",
+            json!({"events": [{"t_us": t, "kind": kind, "x": x, "y": y}]}),
+        );
+    };
+    // From above, down through the body and beyond: held on the edge (y = 100).
+    ptr(&mut e, 0, "down", 50.0, 20.0);
+    ptr(&mut e, 10_000, "motion", 60.0, 90.0);
+    ptr(&mut e, 20_000, "motion", 70.0, 140.0);
+    ptr(&mut e, 30_000, "motion", 80.0, 260.0);
+    let live = e.session.live_preview().unwrap();
+    assert!(
+        live.samples.iter().all(|s| s.y <= 100.0 + 1e-9),
+        "blocked while drawing"
+    );
+    ptr(&mut e, 40_000, "up", 80.0, 260.0);
+    let o = objects(&e, n);
+    let ys: Vec<f64> = o[0]["samples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["y"].as_f64().unwrap())
+        .collect();
+    assert!(ys.iter().all(|y| *y <= 100.0 + 1e-9), "{ys:?}");
+    assert!((ys.last().unwrap() - 100.0).abs() < 1e-9, "stops at the edge: {ys:?}");
+    // From below the body, up through it: held on the back edge (y = 172).
+    ptr(&mut e, 100_000, "down", 50.0, 300.0);
+    ptr(&mut e, 110_000, "motion", 50.0, 120.0);
+    ptr(&mut e, 120_000, "motion", 50.0, 20.0);
+    ptr(&mut e, 130_000, "up", 50.0, 20.0);
+    let o = objects(&e, n);
+    for p in o[1]["samples"].as_array().unwrap() {
+        assert!(p["y"].as_f64().unwrap() >= 172.0 - 1e-9, "{p}");
+    }
+    // Beside the ruler's end (it is 1800 long, centred on x = 0): unchanged.
+    ptr(&mut e, 200_000, "down", 1000.0, 20.0);
+    ptr(&mut e, 210_000, "motion", 1000.0, 260.0);
+    ptr(&mut e, 220_000, "up", 1000.0, 260.0);
+    let o = objects(&e, n);
+    let last = o[2]["samples"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last["y"], json!(260.0));
+}
+
 /// R-RULER-001: shown and drawn; its body drags it, its knob rotates it; strokes along its edge
 /// are straight already while drawing; Alt+Left/Right turn by 15°.
 #[test]

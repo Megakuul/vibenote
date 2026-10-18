@@ -28,9 +28,11 @@ Conventions
 - AC: Given a Wayland session without Xwayland, when the app starts, then it opens a window and
   accepts pen input (integration test under a headless compositor or the owner's session).
 
-**R-PLAT-003** Desktop only; no sync, web or mobile.
-- AC: no network access at runtime (test: run the full suite inside a network namespace without
-  connectivity; all tests pass, no connection attempts logged).
+**R-PLAT-003** Desktop only; no sync, web or mobile. (owner 2026-10-18: one-way cloud backup,
+§13a, is the one exception.) No network access at runtime unless the owner enabled the backup of
+the open workspace; networking code lives only in the backup crate.
+- AC: networking crates appear in the dependency tree only below `vibenote-backup`; with backup
+  disabled (the default) the backup worker is not started.
 
 ---
 
@@ -112,7 +114,8 @@ for v1 [proposal].
 - AC: strokes at coordinates ±1e7 canvas units render and hit-test correctly (precision test: no
   visible jitter > 0.1 px at max zoom at those coordinates).
 
-**R-CANVAS-002 Pan & zoom** Pan (two-finger touchpad, middle-mouse drag, space+drag, pen barrel
+**R-CANVAS-002 Pan & zoom** Pan (two-finger touchpad, middle-mouse drag, right-mouse drag (owner 2026-10-18: "like swiping
+in touch"), space+drag, pen barrel
 [proposal]) and zoom (pinch, Ctrl+scroll) from 1 % to 6,400 % [proposal].
 - AC: zoom range enforced; zoom is anchored at the cursor/pinch centre (point under cursor stays
   within 0.5 px).
@@ -321,9 +324,14 @@ can be shown/hidden (toolbar button, key R). It is drawn as a translucent band w
 and its angle; dragging its body (pen, mouse) moves it, dragging the round handle at its end or
 the wheel over it rotates it (Shift: 15° steps; Alt+Left / Alt+Right turn by 15°). Pen
 and mouse strokes starting within 12 px of its drawing edge are laid exactly along the edge —
-already while drawing.
+already while drawing. (owner 2026-10-17: "on top of the ruler the pen should block and not write
+below") The ruler blocks ink like a real one: any other pen or mouse stroke that runs into it
+stops at the edge it came from — samples on the body or behind it are laid on that edge, already
+while drawing; going around an end of the ruler reaches the other side.
 - AC: fixture: stroke drawn near ruler edge → resulting stroke is collinear with the edge
   (max deviation 0.5 px).
+- AC: a stroke from above crossing the ruler has no sample on or below the body; one passing
+  beside its end is unchanged.
 
 ---
 
@@ -427,6 +435,52 @@ the user; ink is durable within 1 s of pen-up [proposal].
 (property test). The format is versioned with forward migration.
 
 **R-DATA-004** Hostile files never crash the app (fuzzed PDF/image/audio/workspace inputs).
+
+---
+
+## 13a. Cloud backup (BACKUP) — owner 2026-10-18
+
+Owner: "Implement sync / backup to the cloud. Should be capable of doing S3 and Google Drive. If I
+enable it it should just backup the file." One-way backup only: nothing is ever downloaded into
+the open workspace, there are no accounts and no merge. Design: ADR 0012.
+
+**R-BACKUP-001 Targets and enabling** Backup is off by default and enabled per workspace in
+Settings → Backup, to one target:
+- **S3**: AWS or any S3-compatible service (endpoint URL); bucket, region, key prefix; an access
+  key pair, or a profile from `~/.aws/credentials`.
+- **Google Drive**: "Connect" signs in through the browser (OAuth for desktop apps, scope
+  `drive.file`: the app sees only files it created) with the owner's own OAuth client id.
+
+Configuration and secrets are stored outside the workspace (`$XDG_CONFIG_HOME/vibenote/backup.json`,
+mode 0600, keyed by the workspace path), so they are never uploaded and other workspaces (tests,
+scratch copies) are never backed up by accident.
+- AC: settings round-trip through `backup.configure` / `backup.status`; secrets are never shown in
+  `backup.status`; the file has mode 0600; another workspace path sees backup disabled.
+
+**R-BACKUP-002 What and when** A backup is a consistent snapshot of the workspace database
+(`VACUUM INTO`, verified with `quick_check` before upload; a damaged snapshot is never uploaded)
+plus every blob (PDFs, images, audio) not uploaded to that target before. It runs on a background
+thread with its own database connection, never on the input or render path, when the workspace
+changed since the last successful backup and that backup is at least the interval (default 10 min)
+old — so also right after start when there were changes — and at once on "Back up now". Remote
+layout under `<prefix>/<workspace name>/`: `workspace.sqlite` (latest), `daily/<weekday>.sqlite`
+(the first backup of each day; 7 days of history) and the blobs as `<db file>.blobs/<h2>/<hash>`
+(mirrors the local layout).
+- AC: against a fake S3 server: the uploaded database opens as the same workspace; a second run
+  without changes uploads nothing; after a change only the database is uploaded again (blobs
+  are not); a corrupt snapshot fails with an error and uploads nothing.
+
+**R-BACKUP-003 Status and errors** Settings show the target, the last successful backup time,
+whether one is running, and the last error; a failed backup is shown as a notice and retried at
+the next interval. Network errors never block, slow or crash the app.
+- AC: a target that refuses the upload → status has the error and no success time; the next
+  scheduled attempt runs again.
+
+**R-BACKUP-004 Restore** `vibenote-cli backup restore <dir> [--daily <weekday>]` downloads the
+latest (or that day's) database and its blobs from the configured target into `<dir>`, which then
+opens as the backed-up workspace.
+- AC: round trip through a fake S3 server and a fake Google Drive server: the restored workspace
+  has the same notes and objects, and its PDFs/images open.
 
 ---
 

@@ -13,6 +13,7 @@ workspace = true
 vibenote-geom = { path = "../geom" }
 vibenote-model = { path = "../model" }
 vibenote-storage = { path = "../storage" }
+vibenote-backup = { path = "../backup" }
 vibenote-ink = { path = "../ink" }
 vibenote-hwr = { path = "../hwr" }
 vibenote-pdf = { path = "../pdf" }

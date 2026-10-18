@@ -4,6 +4,7 @@ members = [
     "crates/geom",
     "crates/model",
     "crates/storage",
+    "crates/backup",
     "crates/ink",
     "crates/hwr",
     "crates/pdf",

@@ -605,6 +605,7 @@ const DOUBLE_CLICK_PX: f64 = 8.0;
 /// Linux codes of the mouse buttons.
 const BTN_LEFT: u32 = 0x110;
 const BTN_MIDDLE: u32 = 0x112;
+const BTN_RIGHT: u32 = 0x111;
 /// Pressure of mouse strokes (R-PEN-012).
 const MOUSE_PRESSURE: f32 = 0.5;
 /// Largest surface coordinate accepted from the mouse (hostile input).
@@ -628,7 +629,7 @@ struct PointerEvent {
     /// Surface-local logical pixels.
     x: f64,
     y: f64,
-    /// Linux button code for down/up (default BTN_LEFT = 272; BTN_MIDDLE = 274 pans).
+    /// Linux button code for down/up (default BTN_LEFT = 272; BTN_MIDDLE = 274 and BTN_RIGHT = 273 pan).
     button: Option<u32>,
     /// Shift held (Shift+click extends a text selection).
     #[serde(default)]
@@ -662,8 +663,8 @@ fn pointer_step(s: &mut Session, e: &PointerEvent, out: &mut BatchResult) {
         (PointerKind::Down, BTN_LEFT) if s.live.tool.is_some() => {}
         (PointerKind::Down, BTN_LEFT) => step(s, &pen(PenEventKind::Down), true, out),
         (PointerKind::Up, BTN_LEFT) => step(s, &pen(PenEventKind::Up), true, out),
-        (PointerKind::Down, BTN_MIDDLE) => s.live.pan = Some((e.x, e.y)),
-        (PointerKind::Up, BTN_MIDDLE) => s.live.pan = None,
+        (PointerKind::Down, BTN_MIDDLE | BTN_RIGHT) => s.live.pan = Some((e.x, e.y)),
+        (PointerKind::Up, BTN_MIDDLE | BTN_RIGHT) => s.live.pan = None,
         (PointerKind::Motion, _) => match s.live.pan {
             Some((px, py)) => {
                 pan_view(s, e.x - px, e.y - py);

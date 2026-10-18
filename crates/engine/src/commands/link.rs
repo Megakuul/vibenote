@@ -183,19 +183,7 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
                         return Err(EngineError::Model("refusing to open this URL".into()));
                     }
                     if !p.dry_run {
-                        let mut child = std::process::Command::new("xdg-open")
-                            .arg(&url)
-                            .stdin(std::process::Stdio::null())
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .spawn()
-                            .map_err(|e| EngineError::Model(format!("xdg-open: {e}")))?;
-                        // Reaped in the background (no zombie; xdg-open returns quickly).
-                        let _ = std::thread::Builder::new()
-                            .name("vibenote-xdg-open".into())
-                            .spawn(move || {
-                                let _ = child.wait();
-                            });
+                        xdg_open(&url)?;
                     }
                     out.opener = Some(["xdg-open".into(), url]);
                 }
@@ -203,5 +191,23 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
             Ok(out)
         },
     )))?;
+    Ok(())
+}
+
+/// Opens `url` with `xdg-open` (the desktop's browser), without waiting.
+pub(crate) fn xdg_open(url: &str) -> Result<(), EngineError> {
+    let mut child = std::process::Command::new("xdg-open")
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| EngineError::Model(format!("xdg-open: {e}")))?;
+    // Reaped in the background (no zombie; xdg-open returns quickly).
+    let _ = std::thread::Builder::new()
+        .name("vibenote-xdg-open".into())
+        .spawn(move || {
+            let _ = child.wait();
+        });
     Ok(())
 }

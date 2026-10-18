@@ -22,6 +22,10 @@ exceptions = [
     { allow = ["MPL-2.0"], crate = "symphonia-format-riff" },
     { allow = ["MPL-2.0"], crate = "symphonia-metadata" },
     { allow = ["MPL-2.0"], crate = "symphonia-utils-xiph" },
+    # Agent, 2026-10-18 (ADR 0012): Mozilla's root certificates as data (permissive). Listed by
+    # rustls-platform-verifier only for wasm32 targets, so it is never built or shipped here;
+    # the backup uses the system trust store.
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-root-certs" },
 ]
 
 [licenses.private]

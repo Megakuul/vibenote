@@ -36,6 +36,14 @@ fn out(s: &str) -> Result<(), String> {
 
 fn run() -> Result<(), String> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // The subcommand: the first argument that is not `--workspace <db>`.
+    let mut i = 0usize;
+    while args.get(i).is_some_and(|a| a == "--workspace") {
+        i = i.saturating_add(2);
+    }
+    if args.get(i).is_some_and(|a| a == "backup") {
+        return backup(&args, i);
+    }
     // Global option: --workspace <db> (persistent; otherwise in-memory).
     let mut engine = match args.iter().position(|a| a == "--workspace") {
         Some(i) => {
@@ -227,11 +235,66 @@ fn run() -> Result<(), String> {
                 out(&format!("ACK {id}"))?;
             }
         }
-        _ => {
-            Err("usage: vibenote-cli [--workspace <db>] <commands|run|script|serve|inspect|replay|render-png> …".into())
-        }
+        _ => Err(
+            "usage: vibenote-cli [--workspace <db>] <commands|run|script|serve|inspect|replay|render-png|backup> …"
+                .into(),
+        ),
     };
     // Everything the commands changed is on disk before we report success.
     let synced = engine.sync().map_err(|e| e.to_string());
     r.and(synced)
+}
+
+/// `vibenote-cli --workspace <db> backup <run|status|restore <dir> [--daily <weekday>]>
+/// [--config <backup.json>]` (R-BACKUP-002..004). The config defaults to
+/// `$XDG_CONFIG_HOME/vibenote/backup.json`; its entry for `<db>` is used. `restore` does not open
+/// `<db>` (it may be gone) and writes into `<dir>`.
+fn backup(args: &[String], at: usize) -> Result<(), String> {
+    let opt = |name: &str| -> Result<Option<String>, String> {
+        match args.iter().position(|a| a == name) {
+            Some(i) => args
+                .get(i.saturating_add(1))
+                .cloned()
+                .map(Some)
+                .ok_or_else(|| format!("{name} needs a value")),
+            None => Ok(None),
+        }
+    };
+    let db = std::path::PathBuf::from(opt("--workspace")?.ok_or("backup needs --workspace <db>")?);
+    let config = match opt("--config")? {
+        Some(c) => std::path::PathBuf::from(c),
+        None => vibenote_backup::config::default_config_path().ok_or("no config directory (HOME unset)")?,
+    };
+    let state = vibenote_backup::config::default_state_path().ok_or("no state directory (HOME unset)")?;
+    let sub = args.get(at.saturating_add(1)).map(String::as_str);
+    match sub {
+        Some("restore") => {
+            let dir = args.get(at.saturating_add(2)).ok_or("backup restore needs a directory")?;
+            let cfg = vibenote_backup::config::load_config(&config, &db).map_err(|e| e.to_string())?;
+            let name = db
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .ok_or("--workspace is not a file path")?;
+            let daily = opt("--daily")?;
+            let mut st = vibenote_backup::TargetState::default();
+            let r = vibenote_backup::restore(&cfg, &mut st, &name, std::path::Path::new(dir), daily.as_deref())
+                .map_err(|e| e.to_string())?;
+            out(&serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?)
+        }
+        Some(cmd @ ("run" | "status")) => {
+            let mut e = Engine::open(&db).map_err(|e| e.to_string())?;
+            e.use_backup_config(&config, &state).map_err(|e| e.to_string())?;
+            if cmd == "run" {
+                e.execute("backup.now", serde_json::json!({})).map_err(|e| e.to_string())?;
+                while !e.backup_wait(std::time::Duration::from_secs(5)) {}
+            }
+            let st = e.execute("backup.status", serde_json::json!({})).map_err(|e| e.to_string())?;
+            out(&serde_json::to_string_pretty(&st).map_err(|e| e.to_string())?)?;
+            match st.get("last_error").and_then(serde_json::Value::as_str) {
+                Some(err) if cmd == "run" => Err(err.to_string()),
+                _ => Ok(()),
+            }
+        }
+        _ => Err("usage: vibenote-cli --workspace <db> backup <run|status|restore <dir> [--daily mon..sun]> [--config <file>]".into()),
+    }
 }

@@ -1,6 +1,7 @@
 //! Command implementations and registration.
 
 pub(crate) mod audio;
+mod backup;
 mod blob;
 mod edit;
 mod finder;
@@ -9,7 +10,7 @@ mod image;
 mod ink;
 pub(crate) mod input;
 pub(crate) mod keymap;
-mod link;
+pub(crate) mod link;
 mod order;
 pub(crate) mod pdf;
 pub(crate) mod quickopen;
@@ -52,6 +53,7 @@ pub fn register_all(r: &mut Registry) -> Result<(), EngineError> {
     search::register(r)?;
     hwr::register(r)?;
     audio::register(r)?;
+    backup::register(r)?;
     stubs::register(r)?;
     Ok(())
 }

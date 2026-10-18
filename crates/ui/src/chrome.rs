@@ -68,6 +68,8 @@ pub struct Hit {
 struct State {
     sidebar: bool,
     settings: bool,
+    /// The backup fields being edited in the settings (filled from `backup.status`).
+    backup: Option<BackupForm>,
     search: bool,
     search_text: String,
     searched: String,
@@ -208,6 +210,12 @@ impl Chrome {
     }
 
     /// Opens the search panel (Ctrl+Shift+F) or the find bar (Ctrl+F) with the field focused.
+    /// Shows the settings window (as its toolbar button does).
+    pub fn open_settings(&mut self) {
+        self.st.settings = true;
+        self.dirty = true;
+    }
+
     pub fn open_search(&mut self) {
         self.st.search = true;
         self.st.focus_search = true;
@@ -1099,12 +1107,13 @@ fn build(
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
-            .show(&ctx, |ui| settings(eng, ui, out));
+            .show(&ctx, |ui| settings(eng, &mut st.backup, ui, out));
         if let Some(w) = w {
             areas.push(w.response.rect);
         }
         if !open {
             st.settings = false;
+            st.backup = None;
         }
     }
     if let Some((item, mut name)) = st.rename.take() {
@@ -1404,7 +1413,7 @@ fn search_panel(st: &mut State, ui: &mut egui::Ui, out: &mut Vec<Action>) {
     });
 }
 
-fn settings(eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) {
+fn settings(eng: &Engine, backup_form: &mut Option<BackupForm>, ui: &mut egui::Ui, out: &mut Vec<Action>) {
     use vibenote_model::settings::{BarrelAction, PrettifyMode};
     let st = &eng.session.settings;
     ui.label("Handwriting block: idle time before it is finished");
@@ -1481,6 +1490,223 @@ fn settings(eng: &Engine, ui: &mut egui::Ui, out: &mut Vec<Action>) {
             }
         }
     });
+    ui.separator();
+    egui::CollapsingHeader::new("Cloud backup")
+        .default_open(eng.backup_status().is_some_and(|b| at(&b, "/enabled") == &json!(true)))
+        .show(ui, |ui| backup_settings(eng, backup_form, ui, out));
+}
+
+/// The backup settings being edited (secrets stay empty unless the owner types new ones).
+#[derive(Clone, Debug, Default, PartialEq)]
+struct BackupForm {
+    provider: String,
+    interval: u32,
+    endpoint: String,
+    bucket: String,
+    region: String,
+    prefix: String,
+    key_id: String,
+    secret: String,
+    profile: String,
+    client_id: String,
+    client_secret: String,
+    folder: String,
+}
+
+impl BackupForm {
+    fn from_status(b: &Value) -> BackupForm {
+        let t = |v: &Value| v.as_str().unwrap_or("").to_string();
+        BackupForm {
+            provider: match at(b, "/provider").as_str() {
+                Some("drive") => "drive".into(),
+                _ => "s3".into(),
+            },
+            interval: at(b, "/interval_min")
+                .as_u64()
+                .and_then(|m| u32::try_from(m).ok())
+                .unwrap_or(10),
+            endpoint: t(at(b, "/s3/endpoint")),
+            bucket: t(at(b, "/s3/bucket")),
+            region: t(at(b, "/s3/region")),
+            prefix: t(at(b, "/s3/prefix")),
+            key_id: t(at(b, "/s3/access_key_id")),
+            secret: String::new(),
+            profile: t(at(b, "/s3/profile")),
+            client_id: t(at(b, "/drive/client_id")),
+            client_secret: String::new(),
+            folder: t(at(b, "/drive/folder")),
+        }
+    }
+
+    /// `backup.configure` parameters for the form (empty secrets: unchanged).
+    fn params(&self) -> Value {
+        let mut s3 = serde_json::Map::new();
+        for (k, v) in [
+            ("endpoint", &self.endpoint),
+            ("bucket", &self.bucket),
+            ("region", &self.region),
+            ("prefix", &self.prefix),
+            ("access_key_id", &self.key_id),
+            ("profile", &self.profile),
+        ] {
+            s3.insert(k.into(), json!(v));
+        }
+        if !self.secret.is_empty() {
+            s3.insert("secret_access_key".into(), json!(self.secret));
+        }
+        let mut drive = serde_json::Map::new();
+        drive.insert("client_id".into(), json!(self.client_id));
+        drive.insert("folder".into(), json!(self.folder));
+        if !self.client_secret.is_empty() {
+            drive.insert("client_secret".into(), json!(self.client_secret));
+        }
+        json!({"provider": self.provider, "interval_min": self.interval, "s3": s3, "drive": drive})
+    }
+}
+
+/// The value at JSON pointer `p` (null if missing).
+fn at<'a>(v: &'a Value, p: &str) -> &'a Value {
+    v.pointer(p).unwrap_or(&Value::Null)
+}
+
+/// "5 min ago" for a Unix-ms time.
+fn ago(ms: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or(0);
+    let min = now.saturating_sub(ms) / 60_000;
+    match min {
+        0 => "just now".into(),
+        1..=59 => format!("{min} min ago"),
+        60..=2879 => format!("{} h ago", min / 60),
+        _ => format!("{} days ago", min / 1440),
+    }
+}
+
+/// Settings → Cloud backup (R-BACKUP-001, R-BACKUP-003).
+fn backup_settings(eng: &Engine, form: &mut Option<BackupForm>, ui: &mut egui::Ui, out: &mut Vec<Action>) {
+    let Some(b) = eng.backup_status() else {
+        ui.label("Not available for this workspace.");
+        return;
+    };
+    let f = form.get_or_insert_with(|| BackupForm::from_status(&b));
+    let mut enabled = at(&b, "/enabled") == &json!(true);
+    if ui.checkbox(&mut enabled, "Back up this workspace").changed() {
+        let mut p = f.params();
+        if let Some(m) = p.as_object_mut() {
+            m.insert("enabled".into(), json!(enabled));
+        }
+        out.push(Action::Cmd("backup.configure", p));
+    }
+    ui.horizontal(|ui| {
+        ui.label("Service");
+        for (label, value) in [("S3", "s3"), ("Google Drive", "drive")] {
+            if ui.selectable_label(f.provider == value, label).clicked() {
+                f.provider = value.into();
+            }
+        }
+    });
+    let field = |ui: &mut egui::Ui, label: &str, v: &mut String, hint: &str, secret: bool| {
+        ui.label(label);
+        ui.add(
+            egui::TextEdit::singleline(v)
+                .hint_text(hint)
+                .password(secret)
+                .desired_width(260.0),
+        );
+        ui.end_row();
+    };
+    egui::Grid::new("backup-fields")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            if f.provider == "s3" {
+                field(ui, "Bucket", &mut f.bucket, "", false);
+                field(ui, "Region", &mut f.region, "e.g. eu-central-1", false);
+                field(
+                    ui,
+                    "Endpoint",
+                    &mut f.endpoint,
+                    "empty: AWS (or https://… for others)",
+                    false,
+                );
+                field(ui, "Prefix", &mut f.prefix, "vibenote", false);
+                field(ui, "Access key ID", &mut f.key_id, "or use an AWS profile", false);
+                let hint = if at(&b, "/s3/has_secret") == &json!(true) {
+                    "saved (type to replace)"
+                } else {
+                    ""
+                };
+                field(ui, "Secret key", &mut f.secret, hint, true);
+                field(ui, "AWS profile", &mut f.profile, "from ~/.aws/credentials", false);
+            } else {
+                field(
+                    ui,
+                    "OAuth client ID",
+                    &mut f.client_id,
+                    "Google Cloud → Credentials → Desktop app",
+                    false,
+                );
+                let hint = if at(&b, "/drive/has_client_secret") == &json!(true) {
+                    "saved (type to replace)"
+                } else {
+                    ""
+                };
+                field(ui, "Client secret", &mut f.client_secret, hint, true);
+                field(ui, "Folder", &mut f.folder, "vibenote-backup", false);
+            }
+            ui.label("Every");
+            ui.add(egui::DragValue::new(&mut f.interval).range(1..=1440).suffix(" min"));
+            ui.end_row();
+        });
+    ui.horizontal(|ui| {
+        if ui.button("Save").clicked() {
+            out.push(Action::Cmd("backup.configure", f.params()));
+            f.secret.clear();
+            f.client_secret.clear();
+        }
+        if f.provider == "drive" {
+            let connected = at(&b, "/drive/connected") == &json!(true);
+            if ui
+                .button(if connected {
+                    "Reconnect Google Drive"
+                } else {
+                    "Connect Google Drive"
+                })
+                .on_hover_text("Opens the Google sign-in in your browser")
+                .clicked()
+            {
+                out.push(Action::Cmd("backup.configure", f.params()));
+                out.push(Action::Cmd("backup.drive_connect", json!({})));
+                f.client_secret.clear();
+            }
+            if connected && ui.button("Disconnect").clicked() {
+                out.push(Action::Cmd("backup.drive_disconnect", json!({})));
+            }
+        }
+        if ui
+            .add_enabled(at(&b, "/running") != &json!(true), egui::Button::new("Back up now"))
+            .clicked()
+        {
+            out.push(Action::Cmd("backup.now", json!({})));
+        }
+    });
+    let dim = ui.visuals().weak_text_color();
+    if at(&b, "/running") == &json!(true) {
+        ui.label("Backing up…");
+    } else if at(&b, "/connecting") == &json!(true) {
+        ui.label("Waiting for the Google sign-in in your browser…");
+    } else if let Some(t) = at(&b, "/last_success_ms").as_u64() {
+        ui.label(format!("Last backup: {}", ago(t)));
+    } else {
+        ui.colored_label(dim, "No backup yet.");
+    }
+    if let Some(e) = at(&b, "/last_error").as_str() {
+        ui.colored_label(ui.visuals().error_fg_color, e);
+    } else if let (false, Some(p)) = (enabled, at(&b, "/problem").as_str()) {
+        ui.colored_label(dim, p);
+    }
 }
 
 /// Shows the ruler at the middle of the visible canvas (a toggle that hides it keeps it put).

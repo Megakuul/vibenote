@@ -60,18 +60,48 @@ fn r_plat_002_wayland_app_runs() {
     assert_eq!(v["pen_strokes_received"], 1);
 }
 
-/// R-PLAT-003: no networking crates in the product dependency tree.
+/// R-PLAT-003 (revised by the owner 2026-10-18 for the cloud backup, ADR 0012): networking
+/// crates appear only below `vibenote-backup`; with backup off (the default) no backup thread
+/// starts, even when the app passes the config file.
 #[test]
 fn r_plat_003_no_network() {
     let lock = std::fs::read_to_string(root().join("Cargo.lock")).unwrap();
     for bad in [
         "name = \"reqwest\"",
         "name = \"hyper\"",
-        "name = \"ureq\"",
         "name = \"curl\"",
         "name = \"tokio-rustls\"",
         "name = \"native-tls\"",
     ] {
         assert!(!lock.contains(bad), "networking crate in Cargo.lock: {bad}");
     }
+    // Who depends on the HTTP client directly: only the backup crate.
+    let mut users = vec![];
+    for block in lock.split("[[package]]") {
+        let name = block
+            .lines()
+            .find_map(|l| l.strip_prefix("name = \""))
+            .map(|n| n.trim_end_matches('"').to_string());
+        if let Some(deps) = block.split("dependencies = [").nth(1)
+            && deps.split(']').next().unwrap().lines().any(|l| {
+                let d = l.trim().trim_matches(|c| c == '"' || c == ',');
+                d == "ureq" || d.starts_with("ureq ")
+            })
+        {
+            users.push(name.unwrap());
+        }
+    }
+    assert_eq!(users, ["vibenote-backup"]);
+    // Backup handling on, backup off: no thread.
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = vibenote_engine::Engine::open(&dir.path().join("ws.sqlite")).unwrap();
+    e.use_backup_config(&dir.path().join("backup.json"), &dir.path().join("state.json"))
+        .unwrap();
+    assert!(e.backup_tick(std::time::SystemTime::now()).is_empty());
+    assert!(!e.backup_active());
+    let threads: Vec<String> = std::fs::read_dir("/proc/self/task")
+        .unwrap()
+        .filter_map(|t| std::fs::read_to_string(t.ok()?.path().join("comm")).ok())
+        .collect();
+    assert!(!threads.iter().any(|t| t.trim() == "vibenote-backup"), "{threads:?}");
 }
