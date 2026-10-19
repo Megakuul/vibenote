@@ -1,0 +1,113 @@
+# Releases from conventional commits. On every push to main the tagger looks at the commits since
+# the last tag: `fix:`/`perf:` → patch, `feat:` → minor, `!`/`BREAKING CHANGE` → major; other
+# types (docs, chore, ci, …) release nothing. A new tag gets a GitHub release with the changelog
+# and the AppImage built with Nix (`nix build .#appimage`), its version stamped from the tag.
+# Run by hand with a tag to rebuild that release's AppImage.
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to rebuild and attach the AppImage to (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.new_tag }}
+      changelog: ${{ steps.tag.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Tag from conventional commits
+        id: tag
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release_branches: main
+          tag_prefix: v
+          # Only fix/feat/perf/breaking commits make a release.
+          default_bump: false
+
+  appimage:
+    needs: tag
+    # A new tag from the push, or a tag given by hand.
+    if: ${{ !cancelled() && (needs.tag.outputs.tag != '' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      TAG: ${{ needs.tag.outputs.tag || github.event.inputs.tag }}
+    steps:
+      - name: Free disk space (the release build and mesa's closure need ~15 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Stamp the version from the tag
+        run: |
+          # The workspace version (Cargo.toml) and the workspace members in Cargo.lock; the tag is
+          # the source of truth for releases.
+          python3 - "${TAG#v}" <<'EOF'
+          import re, sys, pathlib
+          version = sys.argv[1]
+          toml = pathlib.Path("Cargo.toml")
+          text = toml.read_text()
+          old = re.search(r'\[workspace\.package\][^\[]*?\nversion = "([^"]*)"', text, re.S).group(1)
+          toml.write_text(text.replace(f'\nversion = "{old}"', f'\nversion = "{version}"', 1))
+          lock = pathlib.Path("Cargo.lock")
+          blocks = lock.read_text().split("\n[[package]]\n")
+          for i, b in enumerate(blocks):
+              # Workspace members: no registry source, the workspace's version.
+              if i and "\nsource = " not in b and f'\nversion = "{old}"' in b:
+                  blocks[i] = b.replace(f'\nversion = "{old}"', f'\nversion = "{version}"', 1)
+          lock.write_text("\n[[package]]\n".join(blocks))
+          print(f"version {old} -> {version}")
+          EOF
+          nix eval --raw .#vibenote.version
+
+      - name: Build the AppImage
+        run: nix build .#appimage --print-build-logs --out-link result-appimage
+
+      - name: Smoke test
+        run: |
+          # The AppImage mounts the Nix store with an unprivileged user namespace, which Ubuntu
+          # 24.04 restricts through AppArmor by default.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          ./result-appimage --help
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGELOG: ${{ needs.tag.outputs.changelog }}
+        run: |
+          name="vibenote-${TAG}-x86_64.AppImage"
+          install -m755 result-appimage "$name"
+          sha256sum "$name" > "$name.sha256"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            printf '%s\n' "${CHANGELOG:-Release $TAG}" > notes.md
+            gh release create "$TAG" --verify-tag --title "vibenote $TAG" --notes-file notes.md
+          fi
+          gh release upload "$TAG" "$name" "$name.sha256" --clobber

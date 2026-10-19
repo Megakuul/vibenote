@@ -17,6 +17,7 @@ pub mod pdf;
 mod persist;
 pub mod quickopen;
 pub mod search;
+pub mod sketch;
 
 pub use command::{Command, Registry, Spec};
 pub use extras::{VIM_COLUMNS, frame_of as text_frame, vim_pad};
@@ -129,10 +130,10 @@ pub struct LiveInput {
     /// Corners of a polygon being placed with the shape tool, one per tap (canvas units).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub polygon: Vec<(f64, f64)>,
-    /// The live stroke was turned into a shape by holding still (R-SHAPE-002): the rest of
-    /// this touch draws nothing (`true` for the mouse).
+    /// The shape the live stroke becomes if the pen lifts where it rests (R-SHAPE-002): shown
+    /// instead of the ink; moving on drops it and the stroke goes on as ink.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub snapped: Option<bool>,
+    pub snap_preview: Option<commands::shape::SnapPlan>,
     /// The last press (time µs, surface px) and whether the current press is a double click
     /// with it (text: a double click selects the word).
     #[serde(skip)]
@@ -646,8 +647,24 @@ impl Session {
         }
     }
 
+    /// The strokes that draw a shape in the workspace's shape style (R-SHAPE-003).
+    pub fn shape_strokes(
+        &self,
+        kind: vibenote_model::ShapeKind,
+        points: &[vibenote_geom::Point],
+        closed: bool,
+        color: vibenote_model::Color,
+        width: f32,
+    ) -> Vec<vibenote_model::Stroke> {
+        sketch::shape_strokes(self.settings.shape_style, kind, points, closed, color, width)
+    }
+
     /// The live stroke as the selected tool will commit it (the UI draws it before pen-up).
     pub fn live_preview(&self) -> Option<vibenote_model::Stroke> {
+        // A resting stroke shows the shape it would become instead (R-SHAPE-002, `overlay`).
+        if self.live.snap_preview.is_some() {
+            return None;
+        }
         self.live
             .stroke
             .as_ref()
@@ -723,6 +740,11 @@ impl Session {
         };
         // The ruler first: lasso paths and selection boxes stay visible over it.
         let mut out = self.ruler.strokes(zoom);
+        // The shape a resting stroke becomes when the pen lifts (R-SHAPE-002), drawn as it
+        // will look (R-SHAPE-003).
+        if let Some(p) = &self.live.snap_preview {
+            out.extend(self.shape_strokes(p.kind, &p.points, p.closed, p.color, p.width));
+        }
         if let Some(ls) = self.live.stroke.as_ref().filter(|l| self.lassoing(l)) {
             let mut pts: Vec<(f64, f64)> = ls.samples.iter().map(|p| (p.x, p.y)).collect();
             if let Some(&first) = pts.first() {
@@ -1521,16 +1543,16 @@ impl Engine {
         }
     }
 
-    /// Lets time pass for the pen on the surface: a stroke held still for 500 ms turns into the
-    /// shape it looks like (R-SHAPE-002). Call it while the pen is down; `now_us` as for
-    /// [`Engine::tick`]. Returns true if the canvas changed.
+    /// Lets time pass for the pen on the surface: a stroke whose end rests still for
+    /// `settings.snap_hold_ms` shows the shape it looks like, made when the pen lifts there
+    /// (R-SHAPE-002). Call it while the pen is down; `now_us` as for [`Engine::tick`]. Returns
+    /// true if what is shown changed.
     pub fn tick_pen(&mut self, now_us: u64) -> Result<bool, EngineError> {
         if self.session.live.stroke.is_none() {
             return Ok(false);
         }
         let mut errors = Vec::new();
-        let snapped = crate::commands::input::hold(&mut self.session, now_us, &mut errors);
-        let changed = snapped || self.session.live.snapped.is_some();
+        let changed = crate::commands::input::hold(&mut self.session, now_us, &mut errors);
         if changed {
             self.flush()?;
         }

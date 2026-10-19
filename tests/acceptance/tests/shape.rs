@@ -41,6 +41,129 @@ fn r_shape_002_snap() {
     assert_eq!(r["kind"], serde_json::Value::Null);
 }
 
+/// R-PEN-007 (owner 2026-10-19): shapes erase like ink — the stroke eraser removes a snapped
+/// line; the area eraser cuts a rectangle's outline into ink; undo brings the shapes back.
+#[test]
+fn r_pen_007_eraser_takes_shapes() {
+    let (mut e, n) = engine_with_note();
+    let rough = line(&mut e, n, (0.0, 0.0), (100.0, 2.0), 0.5);
+    let r = run(&mut e, "shape.snap", json!({"stroke": rough, "held_ms": 600}));
+    assert_eq!(r["kind"], "line");
+    let r = run(
+        &mut e,
+        "ink.erase_stroke",
+        json!({"path": [[50.0, -10.0], [50.0, 10.0]]}),
+    );
+    assert_eq!(r["erased"].as_array().unwrap().len(), 1, "{r}");
+    assert!(objects(&e, n).is_empty());
+    run(&mut e, "edit.undo", json!({}));
+    assert_eq!(objects(&e, n)[0]["kind"], "shape");
+
+    let (mut e, n) = engine_with_note();
+    run(
+        &mut e,
+        "shape.create",
+        json!({"kind": "rectangle", "from": [0.0, 0.0], "to": [200.0, 100.0], "width": 3.0}),
+    );
+    // Across the middle of the top side.
+    let r = run(
+        &mut e,
+        "ink.erase_area",
+        json!({"path": [[100.0, -20.0], [100.0, 20.0]], "radius": 5.0}),
+    );
+    assert_eq!(r["erased"].as_array().unwrap().len(), 1, "{r}");
+    let o = objects(&e, n);
+    assert!(o.iter().all(|x| x["kind"] == "stroke"), "{o:?}");
+    assert_eq!(o.len(), 2, "the outline cut once: two pieces");
+    for x in &o {
+        assert_eq!(x["width"], 3.0);
+        for p in x["samples"].as_array().unwrap() {
+            let (px, py) = (p["x"].as_f64().unwrap(), p["y"].as_f64().unwrap());
+            assert!(
+                !(py.abs() < 1.0 && (px - 100.0).abs() < 5.0 - 0.5),
+                "ink left under the eraser at {px},{py}"
+            );
+        }
+    }
+    // Missing the outline (inside the box): nothing happens.
+    let r = run(
+        &mut e,
+        "ink.erase_area",
+        json!({"path": [[100.0, 50.0], [110.0, 50.0]]}),
+    );
+    assert!(r["erased"].as_array().unwrap().is_empty());
+    run(&mut e, "edit.undo", json!({}));
+    let o = objects(&e, n);
+    assert_eq!(o.len(), 1);
+    assert_eq!(o[0]["shape"], "rectangle");
+}
+
+/// R-SHAPE-002 (owner 2026-10-19): an arrow drawn in one stroke, head first, snaps to an arrow
+/// with its tip where the head was.
+#[test]
+fn r_shape_002_arrows() {
+    let (mut e, n) = engine_with_note();
+    let mut pts = vec![(370.0, 82.0), (400.0, 100.0), (370.0, 118.0), (400.0, 100.0)];
+    pts.extend((1..=20).map(|i| (400.0 - 15.0 * f64::from(i), 100.0 + f64::from(i % 2))));
+    let samples: Vec<_> = pts
+        .iter()
+        .enumerate()
+        .map(|(i, (x, y))| json!({"x": x, "y": y, "p": 0.5, "t_us": i as u64 * 1000}))
+        .collect();
+    let s = id(&run(&mut e, "ink.stroke.add", json!({ "samples": samples })));
+    let r = run(&mut e, "shape.snap", json!({"stroke": s, "held_ms": 600}));
+    assert_eq!(r["kind"], "arrow");
+    let o = objects(&e, n);
+    let p = o[0]["points"].as_array().unwrap();
+    assert!(
+        (p[1]["x"].as_f64().unwrap() - 400.0).abs() < 6.0,
+        "tip at the head: {p:?}"
+    );
+}
+
+/// R-SHAPE-003: the hand-drawn look stays near the clean outline, is not straight, persists and
+/// does not change when the shape moves.
+#[test]
+fn r_shape_003_hand_drawn_look() {
+    let (mut e, _) = engine_with_note();
+    let r = id(&run(
+        &mut e,
+        "shape.create",
+        json!({"kind": "rectangle", "from": [0.0, 0.0], "to": [200.0, 100.0]}),
+    ));
+    let drawn = |e: &vibenote_engine::Engine| {
+        let (_, v) = e.session.extras_in_view((-50.0, -50.0), 1.0, (400.0, 300.0));
+        v
+    };
+    assert_eq!(drawn(&e).len(), 1, "clean: one outline");
+    let st = run(&mut e, "settings.set", json!({"shape_style": "hand_drawn"}));
+    assert_eq!(st["shape_style"], "hand_drawn");
+    let v = drawn(&e);
+    assert_eq!(v.len(), 8, "each side twice");
+    let mut most = 0.0f64;
+    for st in &v {
+        for p in &st.samples {
+            let d =
+                p.y.abs()
+                    .min((p.y - 100.0).abs())
+                    .min(p.x.abs())
+                    .min((p.x - 200.0).abs());
+            assert!(d < 8.0, "{p:?}");
+            most = most.max(d);
+        }
+    }
+    assert!(most > 0.5, "not ruler-straight: {most}");
+    // Moving it keeps the look.
+    run(&mut e, "selection.set", json!({"ids": [r]}));
+    run(&mut e, "selection.transform", json!({"translate": [30.0, 0.0]}));
+    let w = drawn(&e);
+    for (a, b) in v.iter().zip(&w) {
+        for (p, q) in a.samples.iter().zip(&b.samples) {
+            assert!((p.x + 30.0 - q.x).abs() < 0.01 && (p.y - q.y).abs() < 0.01);
+        }
+    }
+}
+
 /// R-RULER-001: strokes starting near the ruler edge snap to it (max deviation 0.5 px).
 #[test]
 fn r_ruler_001_snapping() {

@@ -2,7 +2,7 @@
 //! R-SHAPE-001). Drawn above PDF pages and images, below ink.
 
 use vibenote_geom::{Point, Rect};
-use vibenote_model::{Color, LinkTarget, ObjectKind, Sample, Stroke, TextMark, TextStyle, Tool, shape_outline};
+use vibenote_model::{Color, LinkTarget, ObjectKind, Sample, Stroke, TextMark, TextStyle, Tool};
 use vibenote_render::TextItem;
 
 /// Link label colour and size.
@@ -244,24 +244,7 @@ impl crate::Session {
                     if !o.kind.bounds().is_some_and(|b| meets(&b, &view)) {
                         continue;
                     }
-                    for line in shape_outline(*shape, points, *closed, *width) {
-                        vectors.push(Stroke {
-                            tool: Tool::Pen,
-                            color: *color,
-                            width: *width,
-                            samples: line
-                                .into_iter()
-                                .map(|p| Sample {
-                                    x: p.x,
-                                    y: p.y,
-                                    pressure: 1.0,
-                                    tilt_x: 0.0,
-                                    tilt_y: 0.0,
-                                    t_us: 0,
-                                })
-                                .collect(),
-                        });
-                    }
+                    vectors.extend(self.shape_strokes(*shape, points, *closed, *color, *width));
                 }
                 ObjectKind::Audio {
                     origin,

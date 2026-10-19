@@ -46,3 +46,8 @@ by `cargo deny` in `xtask ci` (Phase 3).
 | Inter 4.1 (`assets/fonts/InterVariable.ttf`, `InterVariable-Italic.ttf`; sha256 4989b125…ccaf, d6f1f6a1…586f) — The Inter Project Authors, github.com/rsms/inter (copied from nixpkgs `inter` 4.1) | OFL-1.1 (`assets/fonts/Inter-LICENSE.txt`, from the v4.1 tag) | **shipped**: canvas text boxes and link labels (render crate, glyphon/cosmic-text; no system fonts) |
 | JetBrains Mono NL 2.304 (`assets/fonts/JetBrainsMonoNL-{Regular,Bold,Italic,BoldItalic}.ttf`; sha256 fb3b2575…, 0198e841…, c7392a13…, 6c2716f2…) — The JetBrains Mono Project Authors, github.com/JetBrains/JetBrainsMono (copied from nixpkgs `jetbrains-mono` 2.304; the no-ligature NL cut) | OFL-1.1 (`assets/fonts/JetBrainsMono-LICENSE.txt`: copyright line from the font's name table + the OFL 1.1 text) | **shipped**: text boxes in vim mode (render crate) |
 | Lucide icons 1.57.0, subset of 55 icons (`assets/fonts/LucideIcons-subset.ttf`, sha256 d5cff30c…8067; made by `tools/icons/make_subset.sh` from npm `lucide-static` 1.57.0, tarball sha256 afc8602c…a518) — Lucide Icons and Contributors, lucide.dev; icons derived from Feather © Cole Bemis | ISC; Feather-derived icons MIT (`assets/fonts/Lucide-LICENSE.txt`, both notices) | **shipped**: toolbar, tree and canvas-chip icons (ui crate, egui) |
+
+## App icon
+| Item | Licence | Use |
+|---|---|---|
+| `assets/icons/vibenote.svg` — a sheet with ruled lines and a pen stroke; own work (agent, 2026-10-20) | MIT (the project's licence) | **shipped**: desktop entry and AppImage icon (flake package) |

@@ -107,6 +107,89 @@ fn between(points: &[Point], length: f64, from: f64, to: f64) -> Vec<Point> {
     out
 }
 
+/// An arrow drawn in one stroke: (tail, tip). The head may be drawn tip → barb → tip → barb,
+/// tip → barb → barb (→ tip) (a triangle), and the whole arrow from either end.
+fn arrow(points: &[Point], diag: f64) -> Option<(Point, Point)> {
+    for tol in [0.05, 0.035, 0.07] {
+        let s = simplify(points, tol * diag);
+        let mut r = s.clone();
+        r.reverse();
+        for s in [s, r] {
+            if let Some(found) = arrow_corners(&s) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// The arrow patterns on simplified corners starting at the tail.
+fn arrow_corners(s: &[Point]) -> Option<(Point, Point)> {
+    let (t, tip) = (*s.first()?, *s.get(1)?);
+    let shaft = dist(t, tip);
+    if shaft <= 0.0 {
+        return None;
+    }
+    let barb_ok = |b: Point| {
+        let a = angle_at(t, tip, b);
+        dist(tip, b) < 0.6 * shaft && dist(tip, b) > 0.04 * shaft && (12.0..75.0).contains(&a)
+    };
+    // The two barbs lie on opposite sides of the shaft.
+    let side = |b: Point| (tip.x - t.x) * (b.y - t.y) - (tip.y - t.y) * (b.x - t.x);
+    let opposite = |a: Point, b: Point| side(a) * side(b) < 0.0;
+    let near_tip = |p: Point| dist(p, tip) < 0.3 * shaft;
+    let head = |b1: Point, b2: Point| barb_ok(b1) && barb_ok(b2) && opposite(b1, b2);
+    let found = match s.len() {
+        // tail → tip → barb → back to the tip → barb, or tail → tip → barb → barb → tip (a
+        // closed triangle head)
+        5 => {
+            let (b1, x, y) = (*s.get(2)?, *s.get(3)?, *s.get(4)?);
+            (near_tip(x) && head(b1, y)) || (near_tip(y) && head(b1, x))
+        }
+        // tail → tip → barb → barb (an open triangle head)
+        4 => head(*s.get(2)?, *s.get(3)?),
+        _ => false,
+    };
+    found.then_some((t, tip))
+}
+
+/// An arrow head drawn as its own stroke ("<", "^", ">"): (apex, unit vector from the apex into
+/// the head's opening, arm length). `None` unless the path is two straight arms of similar
+/// length meeting at 25°–120°.
+pub fn caret(points: &[Point]) -> Option<(Point, (f64, f64), f64)> {
+    if points.len() < 3 || !points.iter().all(|p| p.x.is_finite() && p.y.is_finite()) {
+        return None;
+    }
+    let (first, last) = (*points.first()?, *points.last()?);
+    let mut far = (0.0f64, first);
+    for p in points {
+        let d = seg_dist(*p, first, last);
+        if d > far.0 {
+            far = (d, *p);
+        }
+    }
+    let apex = far.1;
+    let (a, b) = (dist(apex, first), dist(apex, last));
+    if a <= 0.0 || b <= 0.0 || a.max(b) > 2.0 * a.min(b) {
+        return None;
+    }
+    let s = simplify(points, 0.12 * a.max(b));
+    if s.len() != 3 {
+        return None;
+    }
+    let angle = angle_at(first, apex, last);
+    if !(25.0..120.0).contains(&angle) {
+        return None;
+    }
+    let mid = Point::new((first.x + last.x) / 2.0, (first.y + last.y) / 2.0);
+    let (dx, dy) = (mid.x - apex.x, mid.y - apex.y);
+    let n = dx.hypot(dy);
+    if n <= 0.0 {
+        return None;
+    }
+    Some((apex, (dx / n, dy / n), f64::midpoint(a, b)))
+}
+
 /// The straight line a path looks like: its best fit (principal axis), spanning the path's
 /// extent along it, levelled near the axes. `None` if the path strays from it.
 fn fit_line(points: &[Point], length: f64) -> Option<Snapped> {
@@ -195,22 +278,12 @@ pub fn classify(points: &[Point]) -> Option<Snapped> {
         if let Some(line) = fit_line(points, length) {
             return Some(line);
         }
-        let s = simplify(points, 0.05 * diag);
-        // Arrow drawn in one stroke: tail → tip → barb → tip → barb.
-        if s.len() == 5 {
-            let (t, tip, b1, back, b2) = (s.first()?, s.get(1)?, s.get(2)?, s.get(3)?, s.get(4)?);
-            let shaft = dist(*t, *tip);
-            let barbs_short = dist(*tip, *b1) < 0.5 * shaft && dist(*tip, *b2) < 0.5 * shaft;
-            let returns = dist(*back, *tip) < 0.25 * shaft;
-            let a1 = angle_at(*t, *tip, *b1);
-            let a2 = angle_at(*t, *tip, *b2);
-            if barbs_short && returns && (10.0..70.0).contains(&a1) && (10.0..70.0).contains(&a2) {
-                return Some(Snapped {
-                    kind: ShapeKind::Arrow,
-                    points: vec![*t, *tip],
-                    closed: false,
-                });
-            }
+        if let Some((tail, tip)) = arrow(points, diag) {
+            return Some(Snapped {
+                kind: ShapeKind::Arrow,
+                points: vec![tail, tip],
+                closed: false,
+            });
         }
         return None;
     }
@@ -392,6 +465,82 @@ mod tests {
             }
         }
         assert!(f64::from(right) >= 0.95 * f64::from(total), "{right}/{total}");
+    }
+
+    /// Arrows drawn in one stroke, in the ways people draw them (owner 2026-10-19: "add
+    /// autocorrection for arrows"), from either end, also slanted; the tip is kept.
+    #[test]
+    fn one_stroke_arrows_in_many_ways() {
+        let heads: [&[(f64, f64)]; 4] = [
+            // tip → barb → tip → barb
+            &[
+                (0.0, 100.0),
+                (200.0, 100.0),
+                (170.0, 82.0),
+                (200.0, 100.0),
+                (170.0, 118.0),
+            ],
+            // tip → barb → barb → tip (closed triangle)
+            &[
+                (0.0, 100.0),
+                (200.0, 100.0),
+                (172.0, 84.0),
+                (172.0, 116.0),
+                (200.0, 100.0),
+            ],
+            // tip → barb → barb (open triangle)
+            &[(0.0, 100.0), (200.0, 100.0), (172.0, 84.0), (172.0, 116.0)],
+            // head first: barb → tip → barb → tip → tail
+            &[
+                (170.0, 82.0),
+                (200.0, 100.0),
+                (170.0, 118.0),
+                (200.0, 100.0),
+                (0.0, 100.0),
+            ],
+        ];
+        let rot = |p: &[(f64, f64)], deg: f64| -> Vec<(f64, f64)> {
+            let (sn, c) = deg.to_radians().sin_cos();
+            p.iter().map(|&(x, y)| (x * c - y * sn, x * sn + y * c)).collect()
+        };
+        let (mut total, mut right) = (0, 0);
+        for (h, head) in heads.iter().enumerate() {
+            for deg in [0.0, 35.0, 120.0, 250.0] {
+                for seed in 0..10u64 {
+                    total += 1;
+                    let pts = wobble(&rot(head, deg), 20, 1.5 + (seed % 3) as f64, seed);
+                    let Some(sn) = classify(&pts) else {
+                        eprintln!("head {h} at {deg}°, seed {seed}: none");
+                        continue;
+                    };
+                    let tip = rot(&[(200.0, 100.0)], deg)[0];
+                    if sn.kind == ShapeKind::Arrow && dist(sn.points[1], Point::new(tip.0, tip.1)) < 12.0 {
+                        right += 1;
+                    } else {
+                        eprintln!("head {h} at {deg}°, seed {seed}: {:?}", sn.kind);
+                    }
+                }
+            }
+        }
+        assert!(f64::from(right) >= 0.9 * f64::from(total), "{right}/{total}");
+        // A plain zigzag is no arrow.
+        let zig = wobble(&[(0.0, 0.0), (100.0, 40.0), (0.0, 80.0), (100.0, 120.0)], 20, 1.0, 1);
+        assert_ne!(classify(&zig).map(|s| s.kind), Some(ShapeKind::Arrow));
+    }
+
+    /// A separate head (">"): its apex and the direction it opens to.
+    #[test]
+    fn carets_are_heads() {
+        let gt = wobble(&[(170.0, 80.0), (200.0, 100.0), (170.0, 120.0)], 15, 1.5, 3);
+        let (apex, dir, arm) = caret(&gt).expect("a head");
+        assert!(dist(apex, Point::new(200.0, 100.0)) < 4.0, "{apex:?}");
+        assert!(dir.0 < -0.9, "opens to the left: {dir:?}");
+        assert!((arm - 36.0).abs() < 6.0, "{arm}");
+        // A straight stroke or a very flat angle is not a head.
+        assert!(caret(&wobble(&[(0.0, 0.0), (100.0, 0.0)], 20, 0.5, 2)).is_none());
+        assert!(caret(&wobble(&[(0.0, 0.0), (50.0, 5.0), (100.0, 0.0)], 20, 0.5, 2)).is_none());
+        // Arms of very different length: no.
+        assert!(caret(&wobble(&[(0.0, 0.0), (100.0, 50.0), (110.0, 40.0)], 20, 0.5, 2)).is_none());
     }
 
     /// Straightening: hooks at the ends and a slight bow still make a line; it spans the

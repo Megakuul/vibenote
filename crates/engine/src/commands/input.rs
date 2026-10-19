@@ -137,6 +137,20 @@ fn finish(s: &mut Session, out: &mut BatchResult) {
         return;
     }
     let end_us = ls.t0_us.saturating_add(ls.samples.last().map_or(0, |p| p.t_us));
+    // Lifted where it rested: the shape shown becomes real (ink first, so undo returns to it).
+    if let Some(plan) = s.live.snap_preview.take() {
+        if let Some(stroke) = crate::tool_stroke(&s.settings, ls.samples) {
+            match super::ink::add_stroke(s, ls.note, stroke, Some(ls.t0_us)) {
+                Ok(id) => {
+                    if let Err(e) = super::shape::apply_plan(s, ls.note, id.0, &plan) {
+                        out.errors.push(e.to_string());
+                    }
+                }
+                Err(e) => out.errors.push(e.to_string()),
+            }
+        }
+        return;
+    }
     match crate::tool_stroke(&s.settings, ls.samples) {
         Some(stroke) => match super::ink::add_stroke(s, ls.note, stroke, Some(ls.t0_us)) {
             Ok(id) if lift_snap(s, ls.note, id.0, ls.tool, ls.button) => out.committed.push(id.0),
@@ -173,10 +187,14 @@ fn lift_snap(s: &mut Session, note: vibenote_model::NoteId, id: u64, tool: PenTo
         return false;
     }
     let min = LIFT_SNAP_MIN_PX / s.zoom();
-    let Ok(Some((ops, _, _))) = super::shape::snap_ops(s, note, id, min) else {
+    let stroke = match super::pdf::object(s, note, id).map(|o| o.kind) {
+        Ok(vibenote_model::ObjectKind::Stroke(st)) => st,
+        _ => return false,
+    };
+    let Some(plan) = super::shape::plan(s, note, &stroke, min) else {
         return false;
     };
-    s.commit(crate::Scope::Note(note), "snap shape", ops).is_ok()
+    super::shape::apply_plan(s, note, id, &plan).is_ok()
 }
 
 /// Drags shorter than this (screen px) are taps.
@@ -258,15 +276,23 @@ const HOLD_STILL_PX: f64 = 3.0;
 /// Rough shapes smaller than this (screen px across) never snap: letters like "o" stay ink.
 const SNAP_MIN_PX: f64 = 32.0;
 
-/// Holding the pen still for 500 ms at the end of a stroke turns it into the clean shape it
-/// looks like (R-SHAPE-002): the stroke is committed as ink, then replaced by the shape in a
-/// second undo step (undo returns to the ink). The rest of the touch draws nothing. `now_us`
-/// is on the clock of the pen events. Returns true if it snapped.
-pub(crate) fn hold(s: &mut Session, now_us: u64, out: &mut Vec<String>) -> bool {
+/// The pen moving this far (screen px) from where it rested drops the shape shown and goes on
+/// drawing ink: a short rest in a long drawing does not end it.
+const MOVE_ON_PX: f64 = 8.0;
+
+/// Holding the pen still for `settings.snap_hold_ms` at the end of a stroke shows the clean
+/// shape it looks like (R-SHAPE-002); lifting the pen there makes it (ink first, then the
+/// shape: undo returns to the ink), moving on drops it. `now_us` is on the clock of the pen
+/// events. Returns true if a shape is shown now.
+pub(crate) fn hold(s: &mut Session, now_us: u64, _out: &mut Vec<String>) -> bool {
     use vibenote_model::settings::ToolKind;
+    if s.live.snap_preview.is_some() {
+        return false;
+    }
+    let need_ms = u64::from(s.settings.snap_hold_ms);
     let Some(ls) = s.live.stroke.as_ref() else { return false };
     let inks = matches!(s.settings.tool, ToolKind::Pen | ToolKind::Highlighter);
-    if !inks || ls.tool != PenTool::Pen || s.barrel(ls.button).is_some() || ls.samples.len() < 3 {
+    if need_ms == 0 || !inks || ls.tool != PenTool::Pen || s.barrel(ls.button).is_some() || ls.samples.len() < 3 {
         return false;
     }
     let zoom = s.zoom();
@@ -281,40 +307,18 @@ pub(crate) fn hold(s: &mut Session, now_us: u64, out: &mut Vec<String>) -> bool 
         since = p.t_us;
     }
     let held_us = now_us.saturating_sub(ls.t0_us.saturating_add(since));
-    if held_us < super::shape::SNAP_HOLD_MS.saturating_mul(1000) {
+    if held_us < need_ms.saturating_mul(1000) {
         return false;
     }
-    let mut b = vibenote_geom::Rect::EMPTY;
-    for p in &ls.samples {
-        b.include(vibenote_geom::Point::new(p.x, p.y));
-    }
-    if b.width().max(b.height()) * zoom < SNAP_MIN_PX {
-        return false;
-    }
-    let pts: Vec<vibenote_geom::Point> = ls.samples.iter().map(|p| vibenote_geom::Point::new(p.x, p.y)).collect();
-    if vibenote_ink::shapes::classify(&pts).is_none() {
-        return false;
-    }
-    let Some(ls) = s.live.stroke.take() else { return false };
-    let mouse = ls.mouse;
-    let Some(stroke) = crate::tool_stroke(&s.settings, ls.samples) else {
+    let note = ls.note;
+    let Some(stroke) = crate::tool_stroke(&s.settings, ls.samples.clone()) else {
         return false;
     };
-    let id = match super::ink::add_stroke(s, ls.note, stroke, Some(ls.t0_us)) {
-        Ok(id) => id,
-        Err(e) => {
-            out.push(e.to_string());
-            return false;
-        }
+    let Some(plan) = super::shape::plan(s, note, &stroke, SNAP_MIN_PX / zoom) else {
+        return false;
     };
-    s.live.snapped = Some(mouse);
-    match super::shape::snap(s, ls.note, id.0) {
-        Ok(r) => r.is_some(),
-        Err(e) => {
-            out.push(e.to_string());
-            false
-        }
-    }
+    s.live.snap_preview = Some(plan);
+    true
 }
 
 /// Moves the content by a surface offset (px).
@@ -330,6 +334,7 @@ fn pan_view(s: &mut Session, dx: f64, dy: f64) {
 /// Starts a live stroke (ending any previous one).
 fn begin(s: &mut Session, e: &PenEvent, button: Option<u32>, mouse: bool, out: &mut BatchResult) {
     finish(s, out);
+    s.live.snap_preview = None;
     match s.current_note {
         Some(note) => {
             let first = sample(s, e, e.t_us);
@@ -466,17 +471,6 @@ fn step(s: &mut Session, e: &PenEvent, mouse: bool, out: &mut BatchResult) {
     }
     let mine = |s: &Session| s.live.stroke.as_ref().is_some_and(|l| l.mouse == mouse);
     let dragging = s.live.drag.as_ref().is_some_and(|d| d.mouse == mouse);
-    // After a hold turned the stroke into a shape, the touch ends without drawing.
-    if s.live.snapped == Some(mouse) {
-        match e.kind {
-            PenEventKind::Up | PenEventKind::ProximityOut => s.live.snapped = None,
-            PenEventKind::Motion => s.live.hover = Some(s.view.to_canvas(e.x, e.y)),
-            _ => {}
-        }
-        if e.kind != PenEventKind::ProximityOut {
-            return;
-        }
-    }
     match e.kind {
         PenEventKind::ProximityIn => s.live.tool = Some(e.tool),
         PenEventKind::ProximityOut => {
@@ -576,6 +570,15 @@ fn step(s: &mut Session, e: &PenEvent, mouse: bool, out: &mut BatchResult) {
             match t0 {
                 Some(t0) => {
                     let smp = sample(s, e, t0);
+                    // Moving on after a rest: no shape, the stroke goes on (R-SHAPE-002).
+                    let zoom = s.zoom();
+                    if s.live
+                        .snap_preview
+                        .as_ref()
+                        .is_some_and(|p| (smp.x - p.at.0).hypot(smp.y - p.at.1) * zoom > MOVE_ON_PX)
+                    {
+                        s.live.snap_preview = None;
+                    }
                     if let Some(ls) = s.live.stroke.as_mut()
                         && ls.samples.len() < vibenote_model::limits::MAX_SAMPLES_PER_STROKE
                     {

@@ -510,3 +510,91 @@ fn r_vim_005_finder() {
     ));
     assert_eq!(r.len(), 1);
 }
+
+/// R-VIM-005 (owner 2026-10-19: "make the fuzzy finder go across all notes"): the text finder
+/// searches every note — typed text, handwriting and PDF text — not just the open one, in a
+/// workspace file too (notes not loaded yet).
+#[test]
+fn r_vim_005_finder_across_all_notes() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("ws.sqlite");
+    {
+        let mut e = Engine::open(&db).unwrap();
+        let a = id(&run(&mut e, "workspace.note.create", json!({"name": "Alpha"})));
+        let b = id(&run(&mut e, "workspace.note.create", json!({"name": "Beta"})));
+        let c = id(&run(&mut e, "workspace.note.create", json!({"name": "Gamma"})));
+        run(&mut e, "note.open", json!({"id": a}));
+        run(
+            &mut e,
+            "text.create",
+            json!({"at": [0.0, 0.0], "width": 300.0, "content": "Eigenwerte"}),
+        );
+        run(&mut e, "note.open", json!({"id": b}));
+        run(
+            &mut e,
+            "text.create",
+            json!({"at": [0.0, 0.0], "width": 300.0, "content": "Eigenvektoren"}),
+        );
+        run(&mut e, "note.open", json!({"id": c}));
+        run(
+            &mut e,
+            "pdf.import",
+            json!({"path": root().join("tests/fixtures/pdf/three-pages.pdf"), "at": [0.0, 0.0]}),
+        );
+        run(&mut e, "note.open", json!({"id": a}));
+        e.sync().unwrap();
+    }
+    // Reopened: only the first note is loaded.
+    let mut e = Engine::open(&db).unwrap();
+    run(&mut e, "note.open", json!({"id": 1}));
+    let r = results(&run(&mut e, "finder.query", json!({"kind": "text", "query": "eigen"})));
+    let names: Vec<&str> = r.iter().map(|x| x["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"Alpha") && names.contains(&"Beta"), "{names:?}");
+    let r = results(&run(
+        &mut e,
+        "finder.query",
+        json!({"kind": "text", "query": "zebrafisch"}),
+    ));
+    assert_eq!(r[0]["name"], "Gamma", "{r:?}");
+    assert_eq!(r[0]["page"], 2);
+    assert!(r[0]["line"].as_str().unwrap().contains("Zebrafisch"));
+    // Opening it shows that page.
+    run(
+        &mut e,
+        "finder.open",
+        json!({"note": r[0]["note"], "object": r[0]["object"], "region": r[0]["region"], "viewport": [1000.0, 600.0]}),
+    );
+    assert_eq!(e.session.current_note.map(|n| n.0), r[0]["note"].as_u64());
+}
+
+/// R-VIM-002 (owner 2026-10-19: "on the first line … O to go a line down … I stick to the top
+/// line"): `o`/`O`/Enter on the first or last line open the new line where vim does, and a new
+/// last line makes the box one line taller (the caret's row exists).
+#[test]
+fn r_vim_002_new_lines_at_the_edges() {
+    for (start, seq, want, caret) in [
+        ("", "ifirst<esc>osecond", "first\nsecond", 12),
+        ("abc", "Ozero", "zero\nabc", 4),
+        ("abc", "osecond", "abc\nsecond", 10),
+        ("abc", "A<cr>x", "abc\nx", 5),
+        ("abc\ndef", "ggOzero<esc>jjx", "zero\nabc\nde", 11),
+    ] {
+        let (mut e, _, t) = vim_box(start);
+        let mut t0 = 1000;
+        keys(&mut e, &mut t0, seq);
+        assert_eq!(content(&mut e, t), want, "{start:?} + {seq}");
+        assert_eq!(cursor(&e), caret, "{start:?} + {seq}");
+    }
+    let (mut e, _, _) = vim_box("abc");
+    let h = |e: &Engine| {
+        let f = vibenote_engine::text_frame(&e.session.edited_text_item().unwrap());
+        f.max.y - f.min.y
+    };
+    let one = h(&e);
+    let mut t0 = 1000;
+    keys(&mut e, &mut t0, "o");
+    let two = h(&e);
+    keys(&mut e, &mut t0, "<cr>");
+    let three = h(&e);
+    assert!(two > one + 10.0 && three > two + 10.0, "{one} {two} {three}");
+}

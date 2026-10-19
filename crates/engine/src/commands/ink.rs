@@ -148,6 +148,22 @@ fn windows(path: &[(f64, f64)]) -> Vec<&[(f64, f64)]> {
     out
 }
 
+/// A shape's outline as ink strokes that look the same (pen, full pressure = the shape's width;
+/// hand-drawn shapes as drawn, R-SHAPE-003); `None` for other objects.
+fn shape_ink(s: &Session, kind: &ObjectKind) -> Option<Vec<Stroke>> {
+    let ObjectKind::Shape {
+        shape,
+        points,
+        closed,
+        color,
+        width,
+    } = kind
+    else {
+        return None;
+    };
+    Some(s.shape_strokes(*shape, points, *closed, *color, *width))
+}
+
 /// Erases along `path` in one undo step (no step if nothing is hit). Paths from the pen may be
 /// any length (windows); the command form caps them (`erase_cmd`).
 pub(crate) fn erase(
@@ -187,13 +203,49 @@ pub(crate) fn erase(
     {
         let canvas = s.ws.canvas(note)?;
         for id in ids {
-            let Some(CanvasObject {
-                kind: ObjectKind::Stroke(st),
-                ..
-            }) = canvas.objects.get(&id)
-            else {
+            let Some(o) = canvas.objects.get(&id) else { continue };
+            // Shapes (drawn or snapped from ink, R-SHAPE-002) erase like ink (owner
+            // 2026-10-19): the stroke eraser removes them, the area eraser turns their outline
+            // into ink and cuts it.
+            if let Some(lines) = shape_ink(s, &o.kind) {
+                match mode {
+                    EraseMode::Stroke => {
+                        if lines.iter().any(|l| erasers.iter().any(|e| touches(l, e))) {
+                            hits.push((id, None));
+                        }
+                    }
+                    EraseMode::Area => {
+                        let mut cut = false;
+                        let mut pieces = Vec::new();
+                        for l in lines {
+                            let mut ps = vec![l.samples.clone()];
+                            for e in &erasers {
+                                let mut next = Vec::with_capacity(ps.len());
+                                for samples in ps.drain(..) {
+                                    let piece = Stroke {
+                                        samples,
+                                        ..l.clone_header()
+                                    };
+                                    match split(&piece, e) {
+                                        Some(c) => {
+                                            cut = true;
+                                            next.extend(c);
+                                        }
+                                        None => next.push(piece.samples),
+                                    }
+                                }
+                                ps = next;
+                            }
+                            pieces.extend(ps);
+                        }
+                        if cut {
+                            hits.push((id, Some(pieces)));
+                        }
+                    }
+                }
                 continue;
-            };
+            }
+            let ObjectKind::Stroke(st) = &o.kind else { continue };
             let local: Option<Vec<(f64, f64)>> = display
                 .get(&id)
                 .and_then(crate::hwr::invert)
@@ -257,8 +309,14 @@ pub(crate) fn erase(
         let Some(o) = s.ws.canvas(note)?.objects.get(&id).cloned() else {
             continue;
         };
-        let ObjectKind::Stroke(st) = &o.kind else { continue };
-        let (z, template) = (o.z, st.clone_header());
+        let template = match &o.kind {
+            ObjectKind::Stroke(st) => st.clone_header(),
+            k => match shape_ink(s, k).and_then(|l| l.into_iter().next()) {
+                Some(l) => l.clone_header(),
+                None => continue,
+            },
+        };
+        let z = o.z;
         out.erased.push(id.0);
         ops.push(Op::RemoveObject { note, object: o });
         let transform = display.get(&id).copied();

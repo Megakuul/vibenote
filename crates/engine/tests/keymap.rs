@@ -26,7 +26,7 @@ fn rebinding_validates_persists_and_resets() {
         json!({"key": "shift+ctrl+h", "command": "tool.select.highlighter"}),
     )
     .unwrap();
-    e.execute("keymap.set", json!({"key": "P", "command": null})).unwrap();
+    e.execute("keymap.set", json!({"key": "W", "command": null})).unwrap();
     assert!(
         e.execute("keymap.set", json!({"key": "Ctrl+Q", "command": "no.such.command"}))
             .is_err()
@@ -39,7 +39,7 @@ fn rebinding_validates_persists_and_resets() {
         e.key_binding("Ctrl+Shift+H").as_deref(),
         Some("tool.select.highlighter")
     );
-    assert_eq!(e.key_binding("P"), None);
+    assert_eq!(e.key_binding("W"), None);
     e.sync().unwrap();
     drop(e);
     let mut e = Engine::open(&path).unwrap();
@@ -47,9 +47,9 @@ fn rebinding_validates_persists_and_resets() {
         e.key_binding("Ctrl+Shift+H").as_deref(),
         Some("tool.select.highlighter")
     );
-    assert_eq!(e.key_binding("P"), None);
-    e.execute("keymap.reset", json!({"key": "p"})).unwrap();
-    assert_eq!(e.key_binding("P").as_deref(), Some("tool.select.pen"));
+    assert_eq!(e.key_binding("W"), None);
+    e.execute("keymap.reset", json!({"key": "w"})).unwrap();
+    assert_eq!(e.key_binding("W").as_deref(), Some("tool.select.pen"));
     e.execute("keymap.reset", json!({})).unwrap();
     assert_eq!(e.key_binding("Ctrl+Shift+H"), None);
     // Setting a key back to its default leaves no override.
@@ -73,7 +73,7 @@ fn rebinding_validates_persists_and_resets() {
     c.execute("UPDATE meta SET value = 'garbage' WHERE key = 'keymap'", [])
         .unwrap();
     let e = Engine::open(&path).unwrap();
-    assert_eq!(e.key_binding("P").as_deref(), Some("tool.select.pen"));
+    assert_eq!(e.key_binding("W").as_deref(), Some("tool.select.pen"));
 }
 
 #[test]

@@ -12,15 +12,25 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Default bindings (SPEC R-CMD-002 plus zoom keys, Escape and Ctrl+Q).
+/// Default bindings (SPEC R-CMD-002 plus zoom keys, Escape and Ctrl+Q). Tools sit under the
+/// left hand, which rests on the keyboard while the right one holds the pen or mouse (owner
+/// 2026-10-19): Q W E R T / A S D, and 1–7 in toolbar order. Y and Z are avoided (swapped on
+/// QWERTZ keyboards).
 pub const DEFAULTS: &[(&str, &str)] = &[
-    ("P", "tool.select.pen"),
-    ("H", "tool.select.highlighter"),
+    ("W", "tool.select.pen"),
+    ("A", "tool.select.highlighter"),
+    ("D", "tool.select.cover"),
     ("E", "tool.select.eraser"),
-    ("L", "tool.select.lasso"),
+    ("Q", "tool.select.lasso"),
     ("S", "tool.select.shape"),
     ("R", "ruler.toggle"),
-    ("M", "tool.select.cover"),
+    ("1", "tool.select.pen"),
+    ("2", "tool.select.highlighter"),
+    ("3", "tool.select.cover"),
+    ("4", "tool.select.eraser"),
+    ("5", "tool.select.lasso"),
+    ("6", "tool.select.shape"),
+    ("7", "tool.select.text"),
     ("Alt+Left", "ruler.rotate_left"),
     ("Alt+Right", "ruler.rotate_right"),
     ("T", "tool.select.text"),

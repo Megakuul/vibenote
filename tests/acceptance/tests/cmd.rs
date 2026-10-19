@@ -45,13 +45,21 @@ fn r_cmd_002_keymap() {
     let ids: Vec<String> = e.registry.ids().map(String::from).collect();
     let bindings = km["bindings"].as_object().unwrap();
     for key in [
-        "P",
-        "H",
+        "W",
+        "A",
+        "D",
         "E",
-        "L",
+        "Q",
         "S",
         "R",
         "T",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
         "Ctrl+Z",
         "Ctrl+Shift+Z",
         "Ctrl+C",
@@ -66,5 +74,19 @@ fn r_cmd_002_keymap() {
     ] {
         let cmd = bindings[key].as_str().unwrap_or_else(|| panic!("no binding for {key}"));
         assert!(ids.iter().any(|i| i == cmd), "{key} → unknown command {cmd}");
+    }
+    // Tools are under the left hand (owner 2026-10-19).
+    for (key, cmd) in [
+        ("W", "tool.select.pen"),
+        ("A", "tool.select.highlighter"),
+        ("D", "tool.select.cover"),
+        ("Q", "tool.select.lasso"),
+        ("1", "tool.select.pen"),
+        ("7", "tool.select.text"),
+    ] {
+        assert_eq!(bindings[key], cmd, "{key}");
+    }
+    for old in ["P", "H", "L", "M"] {
+        assert!(bindings.get(old).is_none(), "{old} is no longer a tool key");
     }
 }

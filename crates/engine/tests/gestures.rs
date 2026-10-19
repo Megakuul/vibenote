@@ -350,18 +350,138 @@ fn holding_the_pen_still_snaps_a_rough_shape_and_undo_returns_the_ink() {
     let t = rough_rectangle(&mut e, 1_000_000);
     // Not held long enough yet.
     assert!(!e.tick_pen(t + 400_000).unwrap());
-    assert_eq!(strokes(&e, n) + shapes(&e, n).len(), 0);
+    assert!(e.session.live.snap_preview.is_none());
+    // Held: the shape is shown instead of the ink, nothing is made yet.
     assert!(e.tick_pen(t + 510_000).unwrap());
+    assert_eq!(
+        e.session.live.snap_preview.as_ref().map(|p| p.kind),
+        Some(vibenote_model::ShapeKind::Rectangle)
+    );
+    assert!(e.session.live_preview().is_none(), "the ink gives way to the shape");
+    assert!(e.session.overlay().len() > e.session.ruler.strokes(1.0).len());
+    assert_eq!(strokes(&e, n) + shapes(&e, n).len(), 0);
+    // Lifted where it rests: the shape.
+    let r = pen(&mut e, "up", 100.0, 100.0);
+    assert_eq!(r["errors"], json!([]));
     assert_eq!(shapes(&e, n).len(), 1, "snapped");
     assert_eq!(shapes(&e, n)[0].0, vibenote_model::ShapeKind::Rectangle);
     assert_eq!(strokes(&e, n), 0);
-    // The rest of the touch draws nothing.
-    pen(&mut e, "motion", 500.0, 500.0);
-    let r = pen(&mut e, "up", 500.0, 500.0);
-    assert_eq!(r["committed"], json!([]));
-    assert_eq!(strokes(&e, n), 0);
     e.execute("edit.undo", json!({})).unwrap();
     assert_eq!((strokes(&e, n), shapes(&e, n).len()), (1, 0), "back to the ink");
+}
+
+/// Owner 2026-10-19 ("it also interrupts me while I was just shortly resting"): moving on after
+/// a rest drops the shape and the stroke goes on as ink, all of it.
+#[test]
+fn moving_on_after_a_rest_keeps_drawing() {
+    let (mut e, n) = setup();
+    let t = rough_rectangle(&mut e, 1_000_000);
+    assert!(e.tick_pen(t + 600_000).unwrap());
+    assert!(e.session.live.snap_preview.is_some());
+    // A little tremor while resting keeps the shape…
+    e.execute(
+        "input.pen",
+        json!({"events": [{"t_us": t + 610_000, "kind": "motion", "tool": "pen", "x": 103.0, "y": 101.0, "p": 0.5}]}),
+    )
+    .unwrap();
+    assert!(e.session.live.snap_preview.is_some());
+    // …drawing on drops it.
+    for (i, x) in [120.0, 160.0, 220.0].into_iter().enumerate() {
+        e.execute(
+            "input.pen",
+            json!({"events": [{"t_us": t + 700_000 + i as u64 * 10_000, "kind": "motion", "tool": "pen", "x": x, "y": 60.0, "p": 0.5}]}),
+        )
+        .unwrap();
+    }
+    assert!(e.session.live.snap_preview.is_none());
+    assert!(e.session.live_preview().is_some(), "ink again");
+    pen(&mut e, "up", 220.0, 60.0);
+    assert_eq!((strokes(&e, n), shapes(&e, n).len()), (1, 0));
+    let o = e
+        .session
+        .ws
+        .canvas(NoteId(n))
+        .unwrap()
+        .objects
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let ObjectKind::Stroke(st) = o.kind else { panic!() };
+    assert!(st.samples.len() > 60, "the whole stroke: {}", st.samples.len());
+    // Hold time 0: never.
+    e.execute("settings.set", json!({"snap_hold_ms": 0})).unwrap();
+    let t = rough_rectangle(&mut e, 50_000_000);
+    assert!(!e.tick_pen(t + 5_000_000).unwrap());
+    pen(&mut e, "up", 100.0, 100.0);
+    assert_eq!((strokes(&e, n), shapes(&e, n).len()), (2, 0));
+    // A longer hold time.
+    e.execute("settings.set", json!({"snap_hold_ms": 1200})).unwrap();
+    let t = rough_rectangle(&mut e, 90_000_000);
+    assert!(!e.tick_pen(t + 900_000).unwrap());
+    assert!(e.tick_pen(t + 1_250_000).unwrap());
+    assert!(
+        e.execute("settings.set", json!({"snap_hold_ms": 50})).is_err(),
+        "out of range"
+    );
+}
+
+/// Owner 2026-10-19 ("add autocorrection for arrows"): a head drawn on its own at the end of a
+/// line, then held, turns the line into an arrow (one undo step back to line and head).
+#[test]
+fn a_head_drawn_at_a_line_makes_it_an_arrow() {
+    let (mut e, n) = setup();
+    let mut t = 1_000_000u64;
+    let stroke = |e: &mut Engine, pts: &[(f64, f64)], t: &mut u64| {
+        let mut events = Vec::new();
+        for (i, &(x, y)) in pts.iter().enumerate() {
+            *t += 10_000;
+            let kind = if i == 0 { "down" } else { "motion" };
+            events.push(json!({"t_us": *t, "kind": kind, "tool": "pen", "x": x, "y": y, "p": 0.5}));
+        }
+        e.execute("input.pen", json!({ "events": events })).unwrap();
+    };
+    // The shaft, lifted at once: ink.
+    let shaft: Vec<(f64, f64)> = (0..=30)
+        .map(|i| (100.0 + 10.0 * f64::from(i), 300.0 + f64::from(i % 2)))
+        .collect();
+    stroke(&mut e, &shaft, &mut t);
+    pen(&mut e, "up", 400.0, 300.0);
+    assert_eq!(strokes(&e, n), 1);
+    // The head ">" at its right end, held.
+    let mut head: Vec<(f64, f64)> = (0..=8)
+        .map(|i| (376.0 + 3.0 * f64::from(i), 284.0 + 2.0 * f64::from(i)))
+        .collect();
+    head.extend((1..=8).map(|i| (400.0 - 3.0 * f64::from(i), 300.0 + 2.0 * f64::from(i))));
+    stroke(&mut e, &head, &mut t);
+    assert!(e.tick_pen(t + 600_000).unwrap());
+    let p = e.session.live.snap_preview.clone().expect("an arrow is shown");
+    assert_eq!(p.kind, vibenote_model::ShapeKind::Arrow);
+    assert!(p.replaces.is_some());
+    pen(&mut e, "up", 376.0, 316.0);
+    assert_eq!(
+        (strokes(&e, n), shapes(&e, n)),
+        (0, vec![(vibenote_model::ShapeKind::Arrow, 2)])
+    );
+    let o = e
+        .session
+        .ws
+        .canvas(NoteId(n))
+        .unwrap()
+        .objects
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let ObjectKind::Shape { points, .. } = o.kind else {
+        panic!()
+    };
+    assert!(
+        (points[0].x - 100.0).abs() < 8.0 && (points[1].x - 400.0).abs() < 8.0,
+        "{points:?}"
+    );
+    e.execute("edit.undo", json!({})).unwrap();
+    assert_eq!((strokes(&e, n), shapes(&e, n).len()), (2, 0), "line and head again");
 }
 
 #[test]
@@ -648,8 +768,8 @@ fn holding_the_mouse_still_snaps_a_shape_too() {
     }
     e.execute("input.pointer", json!({ "events": events })).unwrap();
     assert!(e.tick_pen(t + 600_000).unwrap());
-    assert_eq!(shapes(&e, n).len(), 1);
     mouse(&mut e, "up", 100.0, 102.0);
+    assert_eq!(shapes(&e, n).len(), 1);
     assert_eq!(strokes(&e, n), 0);
 }
 

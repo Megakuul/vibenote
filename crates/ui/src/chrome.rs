@@ -539,31 +539,31 @@ fn tool_buttons(
     [
         (
             icon::PEN,
-            "Pen (P) — hold still at the end of a stroke to snap it into a shape",
-            "P",
+            "Pen (W or 1) — hold still at the end of a stroke to snap it into a shape",
+            "W",
             "tool.select.pen",
             t == T::Pen,
         ),
         (
             icon::HIGHLIGHTER,
-            "Highlighter (H)",
-            "H",
+            "Highlighter (A or 2)",
+            "A",
             "tool.select.highlighter",
             t == T::Highlighter,
         ),
         (
             icon::COVER,
-            "Cover (M): hide what is underneath; tap a cover to reveal it, again to hide (flashcards)",
-            "M",
+            "Cover (D or 3): hide what is underneath; tap a cover to reveal it, again to hide (flashcards)",
+            "D",
             "tool.select.cover",
             t == T::Cover,
         ),
         (
             icon::ERASER,
             if t == T::EraserArea {
-                "Area eraser (E) — press again for the stroke eraser"
+                "Area eraser (E or 4) — press again for the stroke eraser"
             } else {
-                "Stroke eraser (E) — press again for the area eraser"
+                "Stroke eraser (E or 4) — press again for the area eraser"
             },
             "E",
             "tool.select.eraser",
@@ -571,15 +571,15 @@ fn tool_buttons(
         ),
         (
             icon::LASSO,
-            "Lasso (L): select, then drag to move",
-            "L",
+            "Lasso (Q or 5): select, then drag to move",
+            "Q",
             "tool.select.lasso",
             t == T::Lasso,
         ),
-        (icon::SHAPES, "Shapes (S)", "S", "tool.select.shape", t == T::Shape),
+        (icon::SHAPES, "Shapes (S or 6)", "S", "tool.select.shape", t == T::Shape),
         (
             icon::TEXT,
-            "Text (T): click into a box to type there; drag selects, double-click a word, triple-click a line; drag the frame to move",
+            "Text (T or 7): click into a box to type there; drag selects, double-click a word, triple-click a line; drag the frame to move",
             "T",
             "tool.select.text",
             t == T::Text,
@@ -1449,6 +1449,37 @@ fn settings(eng: &Engine, backup_form: &mut Option<BackupForm>, ui: &mut egui::U
     }
     ui.separator();
     ui.label("Shapes from ink");
+    // R-SHAPE-002: resting the pen shows the shape, lifting there makes it, moving on keeps
+    // drawing; how long the rest is, or never.
+    let mut hold_on = st.snap_hold_ms > 0;
+    let mut hold_s = if hold_on {
+        f64::from(st.snap_hold_ms) / 1000.0
+    } else {
+        0.5
+    };
+    ui.horizontal(|ui| {
+        let a = ui
+            .checkbox(&mut hold_on, "Snap when the pen rests")
+            .on_hover_text("Rest the pen at the end of a stroke: the clean shape appears. Lift there to keep it; move on to keep drawing.");
+        let b = ui.add_enabled(hold_on, egui::Slider::new(&mut hold_s, 0.2..=3.0).suffix(" s"));
+        if a.changed() || b.changed() {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 200..=3000 ms
+            let ms = if hold_on { (hold_s * 1000.0).round() as u32 } else { 0 };
+            out.push(Action::Cmd("settings.set", json!({ "snap_hold_ms": ms })));
+        }
+    });
+    ui.horizontal(|ui| {
+        use vibenote_model::settings::ShapeStyle;
+        ui.label("Shapes look");
+        for (label, style, value) in [
+            ("Clean", ShapeStyle::Clean, "clean"),
+            ("Hand-drawn", ShapeStyle::HandDrawn, "hand_drawn"),
+        ] {
+            if ui.selectable_label(st.shape_style == style, label).clicked() {
+                out.push(Action::Cmd("settings.set", json!({ "shape_style": value })));
+            }
+        }
+    });
     let mut lift = st.snap_on_lift;
     if ui
         .checkbox(&mut lift, "Snap rough shapes when the pen lifts")
@@ -1926,6 +1957,9 @@ fn finder(st: &mut State, ctx: &egui::Context, out: &mut Vec<Action>, areas: &mu
                                             } else {
                                                 format!("{where_}/{name}")
                                             };
+                                            if let Some(p) = r["page"].as_u64() {
+                                                where_ = format!("{where_} · PDF p. {p}");
+                                            }
                                         }
                                         let mut job = egui::text::LayoutJob::default();
                                         job.append(

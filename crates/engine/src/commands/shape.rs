@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 use vibenote_geom::Point;
 use vibenote_model::{CanvasObject, Color, ObjectId, ObjectKind, Op, ShapeKind};
 
-/// Hold time that turns a rough stroke into a shape [SPEC proposal: 500 ms].
-pub const SNAP_HOLD_MS: u64 = 500;
+/// A separate arrow head ("<", ">") turns the line it is drawn at into an arrow when its apex is
+/// this close (screen px) to one of the line's ends.
+const HEAD_REACH_PX: f64 = 24.0;
 /// Strokes starting this close to the ruler edge (screen px) snap to it.
 pub const RULER_SNAP_PX: f64 = 12.0;
 
@@ -414,6 +415,145 @@ pub(crate) fn snap_ops(
     )))
 }
 
+/// What a rough stroke becomes when the pen rests at its end (R-SHAPE-002): the shape, where the
+/// pen rested, and — for an arrow head drawn on its own — the line it turns into an arrow.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SnapPlan {
+    pub kind: ShapeKind,
+    pub points: Vec<Point>,
+    pub closed: bool,
+    /// Where the pen rested (canvas): moving away from it keeps drawing ink.
+    pub at: (f64, f64),
+    /// The line (shape or ink) that a separate head turns into an arrow; it is replaced.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<u64>,
+    /// Colour and width of the shape (the line's for a separate head; else the stroke's).
+    pub color: Color,
+    pub width: f32,
+}
+
+/// The ends of a line-like object: a line shape, or ink that is a straight line.
+fn line_ends(kind: &ObjectKind) -> Option<(Point, Point, Color, f32)> {
+    match kind {
+        ObjectKind::Shape {
+            shape: ShapeKind::Line,
+            points,
+            color,
+            width,
+            ..
+        } => Some((*points.first()?, *points.last()?, *color, *width)),
+        ObjectKind::Stroke(st) if st.tool == vibenote_model::Tool::Pen => {
+            let pts: Vec<Point> = st.samples.iter().map(|q| Point::new(q.x, q.y)).collect();
+            let f = vibenote_ink::shapes::classify(&pts).filter(|f| f.kind == ShapeKind::Line)?;
+            Some((*f.points.first()?, *f.points.last()?, st.color, st.width))
+        }
+        _ => None,
+    }
+}
+
+/// The plan for the live stroke `samples` (drawn as `stroke`) of `note`: the shape it looks like
+/// (at least `min_side` canvas units across), or an arrow when it is a head drawn at the end of
+/// a line. `None` if it is neither.
+pub(crate) fn plan(
+    s: &mut Session,
+    note: vibenote_model::NoteId,
+    stroke: &vibenote_model::Stroke,
+    min_side: f64,
+) -> Option<SnapPlan> {
+    let pts: Vec<Point> = stroke.samples.iter().map(|q| Point::new(q.x, q.y)).collect();
+    let last = *pts.last()?;
+    let at = (last.x, last.y);
+    let b = stroke.bounds();
+    if b.width().max(b.height()) >= min_side
+        && let Some(found) = vibenote_ink::shapes::classify(&pts)
+    {
+        return Some(SnapPlan {
+            kind: found.kind,
+            points: found.points,
+            closed: found.closed,
+            at,
+            replaces: None,
+            color: stroke.color,
+            width: stroke.width,
+        });
+    }
+    // A head drawn on its own at the end of a line (owner 2026-10-19: arrows).
+    let (apex, dir, arm) = vibenote_ink::shapes::caret(&pts)?;
+    let reach = (HEAD_REACH_PX / s.zoom()).max(arm);
+    let ids = s.candidates_along(note, &[(apex.x, apex.y)], reach).ok()?;
+    let canvas = s.ws.canvas(note).ok()?;
+    let mut best: Option<(f64, u64, Point, Point, Color, f32)> = None;
+    for id in ids {
+        let Some(o) = canvas.objects.get(&id) else { continue };
+        let Some((a, b2, color, width)) = line_ends(&o.kind) else {
+            continue;
+        };
+        for (tail, end) in [(a, b2), (b2, a)] {
+            let (dx, dy) = (end.x - tail.x, end.y - tail.y);
+            let len = dx.hypot(dy);
+            let d = (apex.x - end.x).hypot(apex.y - end.y);
+            // The head sits on this end and opens back along the shaft.
+            if len <= 2.0 * arm || d > reach || -(dir.0 * dx + dir.1 * dy) / len < 0.7 {
+                continue;
+            }
+            if best.as_ref().is_none_or(|bst| d < bst.0) {
+                best = Some((d, id.0, tail, end, color, width));
+            }
+        }
+    }
+    let (_, id, tail, end, color, width) = best?;
+    // The tip: the line's end, or the apex if it reaches further along the shaft.
+    let (dx, dy) = (end.x - tail.x, end.y - tail.y);
+    let len = dx.hypot(dy);
+    let ahead = ((apex.x - end.x) * dx + (apex.y - end.y) * dy) / len;
+    let tip = Point::new(end.x + dx / len * ahead.max(0.0), end.y + dy / len * ahead.max(0.0));
+    Some(SnapPlan {
+        kind: ShapeKind::Arrow,
+        points: vec![tail, tip],
+        closed: false,
+        at,
+        replaces: Some(id),
+        color,
+        width,
+    })
+}
+
+/// Carries out `plan` for the just-committed ink stroke `stroke` (its own undo step back to the
+/// ink): the stroke — and the line a separate head was drawn at — become the shape.
+pub(crate) fn apply_plan(
+    s: &mut Session,
+    note: vibenote_model::NoteId,
+    stroke: u64,
+    plan: &SnapPlan,
+) -> Result<u64, EngineError> {
+    let ink = super::pdf::object(s, note, stroke)?;
+    let mut ops = vec![Op::RemoveObject {
+        note,
+        object: ink.clone(),
+    }];
+    let mut z = ink.z;
+    if let Some(line) = plan.replaces {
+        let o = super::pdf::object(s, note, line)?;
+        z = o.z;
+        ops.push(Op::RemoveObject { note, object: o });
+    }
+    let shape = CanvasObject {
+        id: ObjectId(s.ws.alloc_id()?),
+        z,
+        kind: ObjectKind::Shape {
+            shape: plan.kind,
+            points: plan.points.clone(),
+            closed: plan.closed,
+            color: plan.color,
+            width: plan.width,
+        },
+    };
+    let id = shape.id.0;
+    ops.push(Op::InsertObject { note, object: shape });
+    s.commit(Scope::Note(note), "snap shape", ops)?;
+    Ok(id)
+}
+
 pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
@@ -460,13 +600,14 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "shape.snap",
-            doc: "Turn a held rough stroke (≥ 500 ms still) into the clean shape it looks like; strokes not held, or not recognised, stay ink. One undo step back to the ink.",
+            doc: "Turn a held rough stroke (still for at least settings.snap_hold_ms) into the clean shape it looks like; strokes not held, or not recognised, stay ink. One undo step back to the ink.",
             reqs: &["R-SHAPE-002"],
             implemented: true,
         },
         |s: &mut Session, p: SnapP| {
             let note = super::ink::target_note(s, p.note)?;
-            if p.held_ms < SNAP_HOLD_MS {
+            let need = u64::from(s.settings.snap_hold_ms);
+            if need == 0 || p.held_ms < need {
                 return Ok(Snapped { kind: None, id: None });
             }
             Ok(match snap(s, note, p.stroke)? {

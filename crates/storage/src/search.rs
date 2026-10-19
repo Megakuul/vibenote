@@ -250,11 +250,11 @@ pub fn query(
     Ok(out)
 }
 
-/// Every row of typed text and recognised handwriting (sources "text" and "ink"), at most
-/// `limit`, for the finder's fuzzy matching (R-VIM-005).
+/// Every row of typed text, recognised handwriting and PDF text (sources "text", "ink",
+/// "pdf"), at most `limit`, for the finder's fuzzy matching (R-VIM-005).
 pub fn written(c: &Connection, limit: usize) -> Result<Vec<SearchRow>, StorageError> {
     let mut st = c.prepare_cached(
-        "SELECT object, note, source, page, region, raw FROM search_row WHERE source IN ('text', 'ink')
+        "SELECT object, note, source, page, region, raw FROM search_row WHERE source IN ('text', 'ink', 'pdf')
          ORDER BY note, object LIMIT ?1",
     )?;
     let lim = i64::try_from(limit).unwrap_or(i64::MAX);

@@ -18,7 +18,7 @@ fn settings(e: &Engine) -> Value {
 const DEFAULTS: &str = r#"{"tool": "pen", "eraser_mode": "stroke", "prettify_mode": "suggest",
     "block_idle_ms": 1500, "prediction_ms": 8.0, "background": {"kind": "blank", "spacing": 32.0},
     "barrel1": "lasso", "barrel2": "eraser", "shape": "rectangle", "snap_on_lift": false, "vim": false,
-    "pen_color": 504829183, "highlighter_color": 4123525375}"#;
+    "pen_color": 504829183, "highlighter_color": 4123525375, "snap_hold_ms": 500, "shape_style": "clean"}"#;
 
 #[test]
 fn defaults_follow_the_spec() {

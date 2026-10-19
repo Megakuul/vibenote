@@ -51,6 +51,9 @@ struct Found {
     offset: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     region: Option<[f64; 4]>,
+    /// A PDF page's text: its page number (1-based).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<u32>,
     /// Lines around the match (text) or the note's first lines (notes).
     preview: Vec<String>,
     score: i64,
@@ -114,6 +117,7 @@ fn text_query(s: &Session, query: &str, limit: usize) -> Result<Vec<Found>, Engi
                 object: Some(r.object.0),
                 offset: (r.source == "text").then_some(start),
                 region: r.region.map(rect4),
+                page: if r.source == "pdf" { r.page } else { None },
                 preview,
                 score: sc,
             });
@@ -187,6 +191,7 @@ fn notes_query(s: &mut Session, query: &str, limit: usize) -> Result<Vec<Found>,
                 object: None,
                 offset: None,
                 region: None,
+                page: None,
                 preview,
                 score: sc,
             })

@@ -343,7 +343,7 @@ impl TextState {
         buf.set_size(Some(item.width.max(1.0) as f32), None);
         buf.set_wrap(Wrap::WordOrGlyph);
         let sp = spans(item);
-        let attrs: Vec<(&str, Attrs<'_>)> = sp
+        let mut attrs: Vec<(&str, Attrs<'_>)> = sp
             .iter()
             .map(|(t, st)| {
                 let mut a = Attrs::new()
@@ -363,6 +363,14 @@ impl TextState {
                 (t.as_str(), a)
             })
             .collect();
+        // cosmic-text makes no line after a final line break, so the caret of a new last line
+        // (`o`, Enter at the end) had nowhere to go; a space (invisible, outside the content's
+        // offsets) gives that line its row.
+        if item.content.ends_with('\n')
+            && let Some(a) = attrs.last().map(|(_, a)| a.clone())
+        {
+            attrs.push((" ", a));
+        }
         buf.set_rich_text(attrs, &Attrs::new().family(family(item)), Shaping::Advanced, None);
         buf.shape_until_scroll(&mut self.fonts, false);
         self.buffers.insert(item.key, (buf, self.frame));
@@ -924,6 +932,36 @@ mod tests {
         assert_eq!(st.hit(&it, (2000.0, 500.0)), 5, "below: the end");
         let r = st.ranges(&it, 1, 4);
         assert_eq!(r.len(), 2, "one box per line: {r:?}");
+    }
+
+    /// A trailing empty line (after `o` or Enter on the last line) is a real line: the caret
+    /// goes there, the box is that much taller, and a click there lands on it.
+    #[test]
+    fn a_trailing_empty_line_holds_the_caret() {
+        let mut st = TextState::new();
+        // (Layouts are cached by key.)
+        let one = TextItem {
+            key: 11,
+            ..item("ab", Vec::new())
+        };
+        let two = TextItem {
+            key: 12,
+            ..item("ab\n", Vec::new())
+        };
+        let three = TextItem {
+            key: 13,
+            ..item("ab\n\n", Vec::new())
+        };
+        let (_, y0, h) = st.caret(&two, 0);
+        let (x1, y1, _) = st.caret(&two, 3);
+        assert!((y1 - (y0 + h)).abs() < 1e-3, "second line: {y0} {y1} {h}");
+        assert!((x1 - two.origin.x).abs() < 1e-6, "at the line start: {x1}");
+        let (_, y2, _) = st.caret(&three, 4);
+        assert!((y2 - (y0 + 2.0 * h)).abs() < 1e-3, "third line: {y2}");
+        let (_, h1) = st.extent(&one);
+        let (_, h2) = st.extent(&two);
+        assert!((h2 - 2.0 * h1).abs() < 1e-3, "{h1} {h2}");
+        assert_eq!(st.hit(&two, (two.origin.x + 1.0, y1 + h / 2.0)), 3);
     }
 
     #[test]

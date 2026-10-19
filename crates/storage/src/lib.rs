@@ -839,6 +839,8 @@ fn settings_lenient(json: &str) -> (Settings, Vec<String>) {
         &mut bad,
         "highlighter_color",
     );
+    field(&m, "snap_hold_ms", &mut st.snap_hold_ms, &mut bad, "snap_hold_ms");
+    field(&m, "shape_style", &mut st.shape_style, &mut bad, "shape_style");
     match m.get("background") {
         Some(Value::Object(b)) => {
             field(b, "kind", &mut st.background.kind, &mut bad, "background.kind");

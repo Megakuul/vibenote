@@ -147,7 +147,7 @@ lost on reboot, so rebuild then).
 **The app (M1: Wayland window that inks; no chrome yet):** inside nix-shell (the Vulkan loader is
 dlopened from it), `cargo run -p vibenote -- [--workspace <path.sqlite>] [--note <id>]` (default
 `$XDG_DATA_HOME/vibenote/workspace.sqlite`, first note). Keys come from the engine keymap
-(`keymap.get`; SPEC R-CMD-002: P/H/E/L pen/highlighter/eraser/lasso, Ctrl+Z / Ctrl+Shift+Z,
+(`keymap.get`; SPEC R-CMD-002: W/A/E/Q pen/highlighter/eraser/lasso (1–7 tools in toolbar order), Ctrl+Z / Ctrl+Shift+Z,
 Ctrl+C/X/V, Delete, Escape, Ctrl+0 fit, Ctrl+1 100 %, Ctrl+= / Ctrl+- zoom, Ctrl+Q quit). Wheel,
 middle-drag or Space+drag pan; Ctrl+wheel or pinch zoom at the cursor; left mouse draws;
 barrel buttons per `settings.barrel1/2`.

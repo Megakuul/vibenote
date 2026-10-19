@@ -109,6 +109,18 @@ struct SettingsP {
     /// Colours of new pen / highlighter strokes, 0xRRGGBBAA (R-PEN-013).
     pen_color: Option<u32>,
     highlighter_color: Option<u32>,
+    /// Rest time (ms) at the end of a stroke that snaps it into a shape: 200–3000, 0 = never
+    /// (R-SHAPE-002).
+    snap_hold_ms: Option<u32>,
+    /// How shapes look: `clean` or `hand_drawn` (R-SHAPE-003).
+    shape_style: Option<ShapeStyleP>,
+}
+
+#[derive(Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ShapeStyleP {
+    Clean,
+    HandDrawn,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -203,8 +215,8 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
     r.register(Box::new(Typed::new(
         Spec {
             id: "settings.set",
-            doc: "Change workspace settings (tool, eraser_mode, prettify_mode, block_idle_ms, prediction_ms, background, barrel1, barrel2, shape, snap_on_lift, vim, pen_color, highlighter_color); returns all settings.",
-            reqs: &["R-PEN-006", "R-PEN-010", "R-HWR-001", "R-HWR-006", "R-CANVAS-006", "R-VIM-001", "R-PEN-013"],
+            doc: "Change workspace settings (tool, eraser_mode, prettify_mode, block_idle_ms, prediction_ms, background, barrel1, barrel2, shape, snap_on_lift, vim, pen_color, highlighter_color, snap_hold_ms, shape_style); returns all settings.",
+            reqs: &["R-PEN-006", "R-PEN-010", "R-HWR-001", "R-HWR-006", "R-CANVAS-006", "R-VIM-001", "R-PEN-013", "R-SHAPE-002", "R-SHAPE-003"],
             implemented: true,
         },
         |s: &mut Session, p: SettingsP| {
@@ -226,6 +238,11 @@ pub fn register(r: &mut Registry) -> Result<(), EngineError> {
                 vim: p.vim.unwrap_or(c.vim),
                 pen_color: p.pen_color.map_or(c.pen_color, vibenote_model::Color),
                 highlighter_color: p.highlighter_color.map_or(c.highlighter_color, vibenote_model::Color),
+                snap_hold_ms: p.snap_hold_ms.unwrap_or(c.snap_hold_ms),
+                shape_style: p.shape_style.map_or(c.shape_style, |st| match st {
+                    ShapeStyleP::Clean => vibenote_model::settings::ShapeStyle::Clean,
+                    ShapeStyleP::HandDrawn => vibenote_model::settings::ShapeStyle::HandDrawn,
+                }),
             };
             update(s, next)
         },

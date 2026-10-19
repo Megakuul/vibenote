@@ -80,9 +80,14 @@ configurable to area eraser) without changing the selected tool.
 - AC: eraser-flip fixture → strokes under the eraser path are removed (stroke mode) or cut (area
   mode); pen tool still selected afterwards.
 
-**R-PEN-007 Stroke eraser** Touching any part of a stroke removes the whole stroke.
+**R-PEN-007 Stroke eraser** Touching any part of a stroke removes the whole stroke. (owner
+2026-10-19: "eraser should also erase lines that were fixed by auto correction") Shapes —
+snapped from ink or drawn with the shape tool — erase like ink: the stroke eraser removes a
+touched shape, the area eraser turns its outline into ink of the same colour and width and cuts
+it (one undo step).
 - AC: Given strokes A, B where the eraser path intersects only A, then A is removed and B is
-  unchanged; undo restores A exactly.
+  unchanged; undo restores A exactly. A snapped line is removed the same way; the area eraser
+  across one side of a rectangle leaves ink pieces (no shape) and undo restores the rectangle.
 
 **R-PEN-008 Area eraser** Erases only the area under the eraser; strokes are split into remaining
 pieces (vector, not pixels); pieces keep pressure/tilt samples.
@@ -257,8 +262,9 @@ and the key acts as a vim command (`i`, `A`, `o`, `dd`, …); Esc deselects.
 list and a preview of the selected result. Typing filters with fuzzy matching (characters in
 order; word starts and runs rank higher). Up/Down, Ctrl+N/Ctrl+P, Ctrl+J/Ctrl+K move; Enter opens;
 Esc closes. Never needs the mouse.
-- Text finder (Space f w): lines of typed text (text boxes) and recognised handwriting in all
-  notes; a result shows the line, the note and its folder path. Enter opens the note centred on
+- Text finder (Space f w): lines of typed text (text boxes), recognised handwriting and PDF
+  text in all notes (owner 2026-10-19: "go across all notes"), loaded or not; a result shows the
+  line, the note and its folder path (and the PDF page). Enter opens the note centred on
   the block; a text box is put into editing (Normal mode) with the cursor at the match.
 - Note finder (Space f f, also Ctrl+P): notes by name and folder path, recent first when empty.
   Enter opens the note.
@@ -311,13 +317,29 @@ elapsed time while recording; a recording or playback error is shown to the user
 snapping).
 - AC: command tests; shapes are vector objects with stroke width/colour.
 
-**R-SHAPE-002 Snap from ink** Drawing a rough shape and holding the pen still for 500 ms
-[proposal] converts it to the clean shape (line, arrow, rectangle, ellipse, triangle). Undo
-returns to the original ink. A line is the stroke's best-fit line (hooks at its ends and a
-slight bow allowed), levelled exactly within 6° of horizontal or vertical; a nearly round
-ellipse becomes a circle; corner overshoot does not grow a rectangle.
-- AC: fixture set of rough shapes → correct class for ≥ 95 % [proposal]; strokes that are not
-  held are never converted.
+**R-SHAPE-002 Snap from ink** Drawing a rough shape and resting the pen at its end for
+`snap_hold_ms` (default 500 ms; Settings: 0.2–3 s or never) shows the clean shape it looks like
+(line, arrow, rectangle, ellipse, triangle) in place of the ink. Lifting the pen there makes the
+shape (undo returns to the ink); moving on (more than 8 px) drops it and the stroke goes on as
+ink, so a short rest in a long drawing never interrupts it (owner 2026-10-19: "it also
+interrupts me while I was just shortly resting"). A line is the stroke's best-fit line (hooks at
+its ends and a slight bow allowed), levelled exactly within 6° of horizontal or vertical; a
+nearly round ellipse becomes a circle; corner overshoot does not grow a rectangle. Arrows (owner
+2026-10-19): drawn in one stroke — tip → barb → tip → barb, a triangle head closed or open, from
+either end — or as a separate head ("<", ">") rested at the end of a line (ink or line shape),
+which turns that line into an arrow (one undo step back to line and head).
+- AC: fixture set of rough shapes → correct class for ≥ 95 % [proposal]; one-stroke arrows in
+  all four ways and four directions ≥ 90 %; strokes that are not held are never converted;
+  moving on after a rest leaves the whole stroke as ink; hold time 0 never snaps.
+
+**R-SHAPE-003 Hand-drawn look** (owner 2026-10-19: "a setting … that does autocorrect them but
+still makes them look a bit hand drawn", like draw.io's sketch style) Settings → "Shapes look":
+Clean (default) or Hand-drawn. Hand-drawn shapes keep their clean geometry but are drawn with
+every side twice, slightly bowed, ends a little off and overshooting the corners; ellipses as an
+overlapping loop. The look is stable (seeded by the shape's form, not its position) and the
+eraser cuts what is drawn.
+- AC: engine test: hand-drawn strokes stay within a few px of the clean outline, are not
+  straight, and are identical for a moved shape; the style setting persists.
 
 **R-RULER-001** (owner 2026-10-15: "a virtual ruler that also allows doing straight lines") A ruler
 can be shown/hidden (toolbar button, key R). It is drawn as a translucent band with tick marks
@@ -489,10 +511,13 @@ opens as the backed-up workspace.
 **R-CMD-001** Every user-visible action is a registered command (id, params schema, enabled, run);
 UI, shortcuts, CLI and control channel dispatch by id. Programmatic calls never open dialogs.
 
-**R-CMD-002 Shortcuts** [proposal] P pen, H highlighter, E eraser (again: toggle stroke/area),
-L lasso, S shapes, R ruler, T text, Ctrl+Z / Ctrl+Shift+Z undo/redo, Ctrl+C/X/V, Del delete,
+**R-CMD-002 Shortcuts** Tool keys sit under the left hand, which rests on the keyboard while the
+right one holds the pen or mouse (owner 2026-10-19: "should not align with a practical key but …
+keys on the left hand side"): W pen, A highlighter, D cover, E eraser (again: toggle stroke/area),
+Q lasso, S shapes, R ruler, T text, and 1–7 for the tools in toolbar order (Y/Z avoided: they
+swap on QWERTZ). Ctrl+Z / Ctrl+Shift+Z undo/redo, Ctrl+C/X/V, Del delete,
 Ctrl+P quick-open (the note finder, R-VIM-005), Ctrl+F find, Ctrl+Shift+F global search, Ctrl+0 zoom to fit, Ctrl+1 100 %,
-Space+drag pan. All rebindable.
+Space+drag pan, right- or middle-drag pan. All rebindable.
 - AC: keymap test maps every shortcut to an existing command id.
 
 ---

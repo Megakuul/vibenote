@@ -96,6 +96,17 @@ pub mod bounds {
     /// Prediction horizon (ADR 0001 rule 5; 0 = off).
     pub const PREDICTION_MS: (f64, f64) = (0.0, 20.0);
     pub const BACKGROUND_SPACING: (f64, f64) = (4.0, 1_000.0);
+    /// Holding the pen still this long snaps a rough shape (R-SHAPE-002); 0 = off.
+    pub const SNAP_HOLD_MS: (u32, u32) = (200, 3_000);
+}
+
+/// How shapes are drawn (R-SHAPE-003): clean geometry, or with a hand-drawn look.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShapeStyle {
+    #[default]
+    Clean,
+    HandDrawn,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -123,6 +134,11 @@ pub struct Settings {
     /// Colours of new pen and highlighter strokes (R-PEN-013).
     pub pen_color: crate::Color,
     pub highlighter_color: crate::Color,
+    /// How long the pen must rest at the end of a stroke to snap it into a shape (R-SHAPE-002;
+    /// 0 = never).
+    pub snap_hold_ms: u32,
+    /// How shapes look (R-SHAPE-003).
+    pub shape_style: ShapeStyle,
 }
 
 /// The highlighter's default colour (yellow; drawn translucent).
@@ -144,6 +160,8 @@ impl Default for Settings {
             vim: false,
             pen_color: crate::Color::INK,
             highlighter_color: HIGHLIGHTER_YELLOW,
+            snap_hold_ms: 500,
+            shape_style: ShapeStyle::Clean,
         }
     }
 }
@@ -162,6 +180,9 @@ impl Settings {
     pub fn validate(&self) -> Result<(), ModelError> {
         in_range("block_idle_ms", self.block_idle_ms, bounds::BLOCK_IDLE_MS)?;
         in_range("prediction_ms", self.prediction_ms, bounds::PREDICTION_MS)?;
+        if self.snap_hold_ms != 0 {
+            in_range("snap_hold_ms", self.snap_hold_ms, bounds::SNAP_HOLD_MS)?;
+        }
         self.background.validate()
     }
 
@@ -177,6 +198,10 @@ impl Settings {
         if in_range("", self.prediction_ms, bounds::PREDICTION_MS).is_err() {
             self.prediction_ms = d.prediction_ms;
             fixed.push("prediction_ms".to_string());
+        }
+        if self.snap_hold_ms != 0 && in_range("", self.snap_hold_ms, bounds::SNAP_HOLD_MS).is_err() {
+            self.snap_hold_ms = d.snap_hold_ms;
+            fixed.push("snap_hold_ms".to_string());
         }
         if in_range("", self.background.spacing, bounds::BACKGROUND_SPACING).is_err() {
             self.background.spacing = d.background.spacing;
