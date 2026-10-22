@@ -93,6 +93,10 @@ rustPlatform.buildRustPackage {
 
     # Desktop entry and icon.
     install -Dm644 assets/icons/vibenote.svg $out/share/icons/hicolor/scalable/apps/vibenote.svg
+    for d in assets/icons/hicolor/*/; do
+      size=$(basename "$d")
+      install -Dm644 "$d/vibenote.png" "$out/share/icons/hicolor/$size/apps/vibenote.png"
+    done
     install -Dm644 /dev/stdin $out/share/applications/vibenote.desktop <<EOF
     [Desktop Entry]
     Type=Application
@@ -119,6 +123,7 @@ rustPlatform.buildRustPackage {
 
     wrapProgram $out/bin/vibenote \
       --set-default VIBENOTE_ASSETS $out/share/vibenote \
+      --set-default VIBENOTE_LAUNCHER $out/bin/vibenote \
       --set-default VIBENOTE_PDFIUM ${pdfium}/lib \
       --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath runtimeLibs}
     wrapProgram $out/bin/vibenote-cli \

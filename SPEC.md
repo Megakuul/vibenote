@@ -34,6 +34,18 @@ the open workspace; networking code lives only in the backup crate.
 - AC: networking crates appear in the dependency tree only below `vibenote-backup`; with backup
   disabled (the default) the backup worker is not started.
 
+**R-PLAT-004 Desktop integration** (owner 2026-10-22: "vibenote has no desktop icon on linux")
+vibenote has an app icon (SVG and PNG 16–512 px) and a desktop entry whose name matches the
+window's app id (`vibenote`), so launchers and compositors show the icon. Packages install both
+system-wide (Nix flake). Otherwise the app installs them for the user (`$XDG_DATA_HOME`
+applications and hicolor icons): automatically when it runs as an AppImage (and again when the
+AppImage moved), and on request (Settings → "Add to app launcher", `vibenote
+--install-desktop-entry`). It never shadows a system-wide entry and only rewrites entries it
+wrote itself.
+- AC: engine test: install writes the entry (Exec = the launcher, Icon, StartupWMClass) and every
+  icon size; a system-wide entry or a foreign user entry is left alone; a moved launcher updates
+  our entry.
+
 ---
 
 ## 2. Pen input & tools (PEN)

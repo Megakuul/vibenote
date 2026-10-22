@@ -51,6 +51,11 @@ chmod +x vibenote-v0.1.0-x86_64.AppImage
 ./vibenote-v0.1.0-x86_64.AppImage
 ```
 
+On its first start it adds itself to your app launcher (a desktop entry and icons in
+`~/.local/share`), and updates that entry when you move the file. Run any other way (`nix run`,
+`cargo run`), Settings → "Add to app launcher" or `vibenote --install-desktop-entry` does the
+same; a system-wide installation (the Nix package) already has its entry and icon.
+
 It carries everything it needs, including mesa's Vulkan drivers (AMD, Intel, nouveau, and
 lavapipe on the CPU); NVIDIA's proprietary driver is not used from inside it. It needs
 unprivileged user namespaces; on Ubuntu 24.04 and later these are restricted by AppArmor
@@ -68,7 +73,8 @@ cargo xtask ci
 ## Releases
 
 Releases follow [conventional commits](https://www.conventionalcommits.org): on every push to
-`main` the `release` workflow tags the next version from the commits since the last tag — `fix:`
+`main` the `release` workflow tags the next version (`tools/release/next-version.py`) from the
+commits since the last tag (all commits before the first release) — `fix:`
 or `perf:` → patch, `feat:` → minor, `feat!:` / `BREAKING CHANGE:` → major; `docs:`, `chore:`,
 `ci:`, `refactor:`, `test:` release nothing — then builds the AppImage with Nix (version stamped
 from the tag) and publishes a GitHub release with the changelog, the AppImage and its sha256.

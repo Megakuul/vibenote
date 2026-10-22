@@ -11,4 +11,5 @@ workspace = true
 
 [dependencies]
 vibenote-ui = { path = "../../crates/ui" }
+vibenote-engine = { path = "../../crates/engine" }
 

@@ -3,6 +3,7 @@
 pub(crate) mod audio;
 mod backup;
 mod blob;
+mod desktop;
 mod edit;
 mod finder;
 pub(crate) mod hwr;
@@ -54,6 +55,7 @@ pub fn register_all(r: &mut Registry) -> Result<(), EngineError> {
     hwr::register(r)?;
     audio::register(r)?;
     backup::register(r)?;
+    desktop::register(r)?;
     stubs::register(r)?;
     Ok(())
 }

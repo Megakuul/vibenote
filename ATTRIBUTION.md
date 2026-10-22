@@ -51,3 +51,4 @@ by `cargo deny` in `xtask ci` (Phase 3).
 | Item | Licence | Use |
 |---|---|---|
 | `assets/icons/vibenote.svg` — a sheet with ruled lines and a pen stroke; own work (agent, 2026-10-20) | MIT (the project's licence) | **shipped**: desktop entry and AppImage icon (flake package) |
+| `assets/icons/hicolor/<size>/vibenote.png` (16–512 px) — rendered from `vibenote.svg` with librsvg's `rsvg-convert` (agent, 2026-10-22) | MIT (the project's licence) | **shipped**: launcher icons (package, AppImage, and the user entry the app installs, R-PLAT-004) |

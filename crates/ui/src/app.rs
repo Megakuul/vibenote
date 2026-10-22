@@ -910,6 +910,12 @@ impl App {
                         Ok(r) if name == "workspace.folder.create" || name == "workspace.note.create" => {
                             self.chrome.created(name, &params, &r);
                         }
+                        // What happened is worth telling (R-PLAT-004).
+                        Ok(r) if name == "app.install_desktop_entry" => {
+                            if let Some(m) = r.get("message").and_then(serde_json::Value::as_str) {
+                                self.chrome.notify(m.to_string());
+                            }
+                        }
                         Ok(_) => {}
                         Err(e) => {
                             eprintln!("vibenote: {name}: {e}");

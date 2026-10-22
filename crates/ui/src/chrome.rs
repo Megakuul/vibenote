@@ -1522,6 +1522,15 @@ fn settings(eng: &Engine, backup_form: &mut Option<BackupForm>, ui: &mut egui::U
         }
     });
     ui.separator();
+    // R-PLAT-004: a launcher entry with the icon (packages install one system-wide).
+    if ui
+        .button("Add to app launcher")
+        .on_hover_text("Installs a desktop entry and the vibenote icon for your user (~/.local/share)")
+        .clicked()
+    {
+        out.push(Action::Cmd("app.install_desktop_entry", json!({})));
+    }
+    ui.separator();
     egui::CollapsingHeader::new("Cloud backup")
         .default_open(eng.backup_status().is_some_and(|b| at(&b, "/enabled") == &json!(true)))
         .show(ui, |ui| backup_settings(eng, backup_form, ui, out));

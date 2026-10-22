@@ -105,3 +105,69 @@ fn r_plat_003_no_network() {
         .collect();
     assert!(!threads.iter().any(|t| t.trim() == "vibenote-backup"), "{threads:?}");
 }
+
+/// R-PLAT-004 (owner 2026-10-22: "vibenote has no desktop icon"): the entry and every icon size
+/// are installed for the user; a system-wide or foreign entry is left alone; a moved launcher
+/// updates our entry.
+#[test]
+fn r_plat_004_desktop_entry_and_icons() {
+    use vibenote_engine::desktop::{Dirs, Outcome, install};
+    let t = tempfile::tempdir().unwrap();
+    let dirs = Dirs {
+        data_home: t.path().join("home"),
+        data_dirs: vec![t.path().join("usr")],
+    };
+    let entry = dirs.data_home.join("applications/vibenote.desktop");
+    let r = install(&dirs, std::path::Path::new("/opt/v/vibenote.AppImage")).unwrap();
+    assert_eq!(r, Outcome::Installed(entry.clone()));
+    let text = std::fs::read_to_string(&entry).unwrap();
+    for line in [
+        "Exec=/opt/v/vibenote.AppImage %U",
+        "Icon=vibenote",
+        "StartupWMClass=vibenote",
+        "Type=Application",
+    ] {
+        assert!(text.lines().any(|l| l == line), "{line} in {text}");
+    }
+    for s in [16, 24, 32, 48, 64, 128, 256, 512] {
+        let p = dirs.data_home.join(format!("icons/hicolor/{s}x{s}/apps/vibenote.png"));
+        let b = std::fs::read(&p).unwrap();
+        assert_eq!(&b[..8], b"\x89PNG\r\n\x1a\n", "{}", p.display());
+        // PNG IHDR width.
+        assert_eq!(u32::from_be_bytes(b[16..20].try_into().unwrap()), s);
+    }
+    assert!(
+        dirs.data_home
+            .join("icons/hicolor/scalable/apps/vibenote.svg")
+            .is_file()
+    );
+    // Again: unchanged; moved: updated.
+    let r = install(&dirs, std::path::Path::new("/opt/v/vibenote.AppImage")).unwrap();
+    assert_eq!(r, Outcome::Unchanged(entry.clone()));
+    let r = install(&dirs, std::path::Path::new("/home/me/Apps/vibenote 2.AppImage")).unwrap();
+    assert_eq!(r, Outcome::Updated(entry.clone()));
+    assert!(
+        std::fs::read_to_string(&entry)
+            .unwrap()
+            .contains("Exec=\"/home/me/Apps/vibenote 2.AppImage\" %U")
+    );
+    // The user's own entry is not touched.
+    std::fs::write(&entry, "[Desktop Entry]\nName=mine\n").unwrap();
+    let r = install(&dirs, std::path::Path::new("/x")).unwrap();
+    assert_eq!(r, Outcome::Foreign(entry.clone()));
+    assert_eq!(std::fs::read_to_string(&entry).unwrap(), "[Desktop Entry]\nName=mine\n");
+    // A system-wide entry (a package): nothing is written.
+    let t2 = tempfile::tempdir().unwrap();
+    let sys = t2.path().join("usr/applications/vibenote.desktop");
+    std::fs::create_dir_all(sys.parent().unwrap()).unwrap();
+    std::fs::write(&sys, "[Desktop Entry]\n").unwrap();
+    let d2 = Dirs {
+        data_home: t2.path().join("home"),
+        data_dirs: vec![t2.path().join("usr")],
+    };
+    assert_eq!(
+        install(&d2, std::path::Path::new("/x")).unwrap(),
+        Outcome::SystemEntry(sys)
+    );
+    assert!(!d2.data_home.exists());
+}

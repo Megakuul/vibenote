@@ -7,6 +7,7 @@ pub mod audio;
 pub mod backup;
 pub mod command;
 mod commands;
+pub mod desktop;
 mod extras;
 pub mod gesture;
 mod hit;
